@@ -241,6 +241,59 @@
       transform: translateY(-1px);
     }
 
+    .drop-zone {
+      position: relative;
+      display: grid;
+      gap: 14px;
+      padding: 22px 18px;
+      border: 1px dashed rgba(79, 195, 247, 0.28);
+      border-radius: 16px;
+      background:
+        linear-gradient(180deg, rgba(79, 195, 247, 0.05), rgba(79, 195, 247, 0.02)),
+        rgba(10, 15, 23, 0.78);
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .drop-zone:hover {
+      border-color: rgba(79, 195, 247, 0.42);
+      background:
+        linear-gradient(180deg, rgba(79, 195, 247, 0.08), rgba(79, 195, 247, 0.03)),
+        rgba(10, 15, 23, 0.88);
+    }
+
+    .drop-zone:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 4px rgba(79, 195, 247, 0.14);
+    }
+
+    .drop-zone.is-dragover {
+      border-color: rgba(79, 195, 247, 0.88);
+      background:
+        linear-gradient(180deg, rgba(79, 195, 247, 0.18), rgba(79, 195, 247, 0.06)),
+        rgba(8, 18, 29, 0.96);
+      box-shadow: 0 0 0 4px rgba(79, 195, 247, 0.14), inset 0 0 40px rgba(79, 195, 247, 0.08);
+      transform: translateY(-1px);
+    }
+
+    .drop-zone-copy {
+      display: grid;
+      gap: 8px;
+      justify-items: start;
+    }
+
+    .drop-zone-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #eaf6ff;
+    }
+
+    .drop-zone-subtitle {
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.6;
+    }
+
     .file-row {
       display: flex;
       flex-wrap: wrap;
@@ -249,7 +302,6 @@
     }
 
     .file-input {
-      position: relative;
       display: inline-flex;
       align-items: center;
       gap: 10px;
@@ -267,11 +319,16 @@
       border-color: rgba(79, 195, 247, 0.4);
     }
 
-    .file-input input[type="file"] {
+    .hidden-file-input {
       position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
     .file-meta {
@@ -544,7 +601,7 @@
         <div class="brand-mark" aria-hidden="true"></div>
         <div>
           <h1>Game CSV Translator Workbench</h1>
-          <p>单文件 HTML 工具 · 本地 CSV 导入、预览与导出</p>
+          <p>单文件 HTML 工具 · 本地 CSV 导入、拖拽预览与导出</p>
         </div>
       </div>
       <div class="status-note">
@@ -603,14 +660,19 @@
             <div class="form-grid">
               <div class="field-group">
                 <label for="csvFileInput">CSV / TXT 文件</label>
-                <div class="file-row">
-                  <label class="file-input" for="csvFileInput">
-                    <span>选择文件</span>
-                    <input id="csvFileInput" type="file" accept=".csv,.txt,text/csv,text/plain">
-                  </label>
-                  <div id="fileMeta" class="file-meta">未选择文件</div>
+                <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="拖拽或点击上传 CSV/TXT 文件">
+                  <input id="csvFileInput" class="hidden-file-input" type="file" accept=".csv,.txt,text/csv,text/plain">
+                  <div class="drop-zone-copy">
+                    <div class="drop-zone-title">拖拽文件到这里，或点击选择文件</div>
+                    <div class="drop-zone-subtitle">支持 `.csv`、`.txt` 以及类似 `Localization.csv.txt` 的文件名。拖入后会立即解析并刷新右侧预览。</div>
+                  </div>
+                  <div class="file-row">
+                    <label class="file-input" for="csvFileInput">
+                      <span>选择文件</span>
+                    </label>
+                    <div id="fileMeta" class="file-meta">未选择文件</div>
+                  </div>
                 </div>
-                <div class="hint">支持 `.csv`、`.txt` 以及类似 `Localization.csv.txt` 的文件名。</div>
               </div>
 
               <div class="controls">
@@ -650,7 +712,7 @@
               <div class="placeholder">
                 <div class="placeholder-card">
                   <strong>等待 CSV 文件</strong>
-                  上传带表头的 CSV/TXT 后，这里会显示可滚动预览表格。
+                  上传或拖拽带表头的 CSV/TXT 文件后，这里会显示可滚动预览表格。
                 </div>
               </div>
             </div>
@@ -671,9 +733,11 @@
   <script>
     let csvData = [];
     let csvHeaders = [];
+    let dragDepth = 0;
     window.csvData = csvData;
 
     const csvFileInput = document.getElementById("csvFileInput");
+    const dropZone = document.getElementById("dropZone");
     const fileMeta = document.getElementById("fileMeta");
     const tableWrap = document.getElementById("tableWrap");
     const logView = document.getElementById("logView");
@@ -696,6 +760,10 @@
       entry.textContent = "[" + new Date().toLocaleTimeString() + "] " + message;
       logView.appendChild(entry);
       logView.scrollTop = logView.scrollHeight;
+    }
+
+    function setDropZoneActive(isActive) {
+      dropZone.classList.toggle("is-dragover", isActive);
     }
 
     function updateStats(headers, rows) {
@@ -833,9 +901,77 @@
       addLog("导出完成: Translated_Localization.csv.txt", "success");
     }
 
+    function openFilePicker() {
+      csvFileInput.value = "";
+      csvFileInput.click();
+    }
+
+    function handleFileSelection(file, source) {
+      if (!file) {
+        addLog("未检测到可用文件。", "warning");
+        return;
+      }
+
+      addLog("收到" + source + "文件: " + file.name, "info");
+      handleCsvFile(file);
+    }
+
+    ["dragover", "drop"].forEach((eventName) => {
+      window.addEventListener(eventName, (event) => {
+        event.preventDefault();
+      });
+    });
+
+    dropZone.addEventListener("click", (event) => {
+      if (event.target.closest(".file-input")) {
+        return;
+      }
+
+      openFilePicker();
+    });
+
+    dropZone.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openFilePicker();
+      }
+    });
+
+    dropZone.addEventListener("dragenter", (event) => {
+      event.preventDefault();
+      dragDepth += 1;
+      setDropZoneActive(true);
+    });
+
+    dropZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      setDropZoneActive(true);
+    });
+
+    dropZone.addEventListener("dragleave", (event) => {
+      event.preventDefault();
+      dragDepth = Math.max(0, dragDepth - 1);
+
+      if (dragDepth === 0) {
+        setDropZoneActive(false);
+      }
+    });
+
+    dropZone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dragDepth = 0;
+      setDropZoneActive(false);
+
+      const file = event.dataTransfer && event.dataTransfer.files
+        ? event.dataTransfer.files[0]
+        : null;
+
+      handleFileSelection(file, "拖拽");
+    });
+
     csvFileInput.addEventListener("change", (event) => {
       const file = event.target.files[0];
-      handleCsvFile(file);
+      handleFileSelection(file, "选择");
     });
 
     document.getElementById("translateBtn").addEventListener("click", () => {
@@ -848,7 +984,7 @@
 
     exportBtn.addEventListener("click", exportCsvFile);
 
-    addLog("界面已初始化，等待上传 CSV/TXT 文件。", "info");
+    addLog("界面已初始化，支持点击或拖拽上传 CSV/TXT 文件。", "info");
     addLog("全局变量 window.csvData 已就绪，可用于后续翻译与导出阶段。", "success");
   </script>
 </body>
