@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game CSV Translator Tool</title>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --panel: rgba(20, 27, 38, 0.92);
+      --panel-strong: rgba(15, 21, 31, 0.98);
+      --border: rgba(120, 138, 165, 0.22);
+      --text: #e6edf3;
+      --muted: #8b98ab;
+      --accent: #4fc3f7;
+      --accent-strong: #2196f3;
+      --success: #4dd0a8;
+      --warning: #ffb86b;
+      --danger: #ff7b72;
+      --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+      --radius: 18px;
+      --grid-gap: 18px;
+      --font-ui: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+      --font-mono: "Cascadia Code", "Consolas", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-ui);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(33, 150, 243, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(79, 195, 247, 0.12), transparent 24%),
+        linear-gradient(180deg, #0b1018 0%, #0d1117 40%, #090c12 100%);
+      overflow: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 30px 30px;
+      pointer-events: none;
+      opacity: 0.18;
+    }
+
+    .app-shell {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: var(--grid-gap);
+      height: 100vh;
+      padding: 24px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 20px 24px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, rgba(20, 27, 38, 0.92), rgba(14, 20, 29, 0.96));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(79, 195, 247, 0.28), rgba(33, 150, 243, 0.1));
+      border: 1px solid rgba(79, 195, 247, 0.35);
+      box-shadow: inset 0 0 24px rgba(79, 195, 247, 0.12);
+      position: relative;
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      background: var(--accent);
+      filter: drop-shadow(0 0 10px rgba(79, 195, 247, 0.5));
+    }
+
+    .brand-mark::before {
+      width: 20px;
+      height: 3px;
+      top: 13px;
+      left: 11px;
+    }
+
+    .brand-mark::after {
+      width: 12px;
+      height: 12px;
+      right: 10px;
+      bottom: 10px;
+      background: rgba(79, 195, 247, 0.84);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .brand p,
+    .status-note {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .status-note {
+      font-family: var(--font-mono);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
+      gap: var(--grid-gap);
+      min-height: 0;
+      flex: 1;
+    }
+
+    .sidebar,
+    .content {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--grid-gap);
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, var(--panel), var(--panel-strong));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 16px 18px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-size: 0.96rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .panel-header span {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .field-group {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field-row {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    label {
+      font-size: 0.88rem;
+      color: #c6d1df;
+      font-weight: 600;
+    }
+
+    .hint {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    input[type="text"],
+    input[type="password"],
+    textarea {
+      width: 100%;
+      border: 1px solid rgba(103, 116, 136, 0.35);
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: var(--text);
+      background: rgba(10, 15, 23, 0.92);
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 132px;
+      resize: vertical;
+      line-height: 1.55;
+    }
+
+    input:focus,
+    textarea:focus {
+      border-color: var(--accent-strong);
+      box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.14);
+      transform: translateY(-1px);
+    }
+
+    .file-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .file-input {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid rgba(79, 195, 247, 0.26);
+      border-radius: 12px;
+      background: rgba(79, 195, 247, 0.08);
+      color: #dff6ff;
+      cursor: pointer;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .file-input:hover {
+      background: rgba(79, 195, 247, 0.14);
+      border-color: rgba(79, 195, 247, 0.4);
+    }
+
+    .file-input input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .file-meta {
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-family: var(--font-mono);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .radio-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .radio-card {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(103, 116, 136, 0.28);
+      background: rgba(14, 18, 26, 0.86);
+      color: #d0dae7;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .radio-card:hover {
+      border-color: rgba(79, 195, 247, 0.4);
+    }
+
+    .radio-card input {
+      accent-color: var(--accent);
+      margin: 0;
+    }
+
+    .button-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    button {
+      border: 1px solid transparent;
+      border-radius: 12px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 700;
+      color: var(--text);
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button.primary {
+      background: linear-gradient(135deg, rgba(33, 150, 243, 0.92), rgba(79, 195, 247, 0.92));
+      box-shadow: 0 10px 22px rgba(33, 150, 243, 0.22);
+    }
+
+    button.secondary {
+      background: rgba(255, 184, 107, 0.12);
+      border-color: rgba(255, 184, 107, 0.24);
+      color: #ffd9ab;
+    }
+
+    button.ghost {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.08);
+      color: #dce4ef;
+    }
+
+    .preview-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.8fr);
+      gap: var(--grid-gap);
+      min-height: 0;
+      flex: 1;
+    }
+
+    .table-panel,
+    .log-panel {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stats-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .stat-chip {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    .table-wrap {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0));
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgba(16, 22, 31, 0.97);
+      color: #dfe7f1;
+      text-align: left;
+      font-size: 0.84rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 13px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      white-space: nowrap;
+    }
+
+    tbody td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: #d2d9e4;
+      vertical-align: top;
+      font-size: 0.92rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    tbody tr:hover {
+      background: rgba(79, 195, 247, 0.05);
+    }
+
+    .index-col {
+      width: 72px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    .log-view {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      padding: 18px;
+      font-family: var(--font-mono);
+      font-size: 0.86rem;
+      line-height: 1.65;
+      color: #c2d0e3;
+      background:
+        linear-gradient(180deg, rgba(79, 195, 247, 0.04), transparent 38%),
+        rgba(10, 14, 20, 0.92);
+    }
+
+    .log-entry {
+      margin: 0 0 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .log-entry.info {
+      border-color: rgba(79, 195, 247, 0.2);
+    }
+
+    .log-entry.success {
+      border-color: rgba(77, 208, 168, 0.22);
+      color: #cbffe8;
+    }
+
+    .log-entry.warning {
+      border-color: rgba(255, 184, 107, 0.22);
+      color: #ffe5c3;
+    }
+
+    .log-entry.error {
+      border-color: rgba(255, 123, 114, 0.24);
+      color: #ffd1cc;
+    }
+
+    .placeholder {
+      display: grid;
+      place-items: center;
+      min-height: 320px;
+      padding: 32px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .placeholder-card {
+      max-width: 420px;
+      padding: 24px;
+      border-radius: 18px;
+      border: 1px dashed rgba(79, 195, 247, 0.25);
+      background: rgba(79, 195, 247, 0.04);
+    }
+
+    .placeholder-card strong {
+      display: block;
+      margin-bottom: 10px;
+      color: #dce9f8;
+      font-size: 1rem;
+    }
+
+    .status-led {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--success);
+      box-shadow: 0 0 12px rgba(77, 208, 168, 0.7);
+    }
+
+    @media (max-width: 1200px) {
+      body {
+        overflow: auto;
+      }
+
+      .app-shell {
+        height: auto;
+        min-height: 100vh;
+      }
+
+      .workspace,
+      .preview-layout,
+      .field-row {
+        grid-template-columns: 1fr;
+      }
+
+      .preview-layout {
+        min-height: auto;
+      }
+
+      .table-wrap {
+        max-height: 56vh;
+      }
+
+      .log-view {
+        min-height: 260px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <h1>Game CSV Translator Workbench</h1>
+          <p>单文件 HTML 工具 · 本地 CSV 导入、预览与导出</p>
+        </div>
+      </div>
+      <div class="status-note">
+        <span class="status-led" aria-hidden="true" style="display:inline-block; margin-right:10px;"></span>
+        Ready / Local Workflow Mode
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="sidebar">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>配置区</h2>
+            <span>Connection Settings</span>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="field-row">
+                <div class="field-group">
+                  <label for="apiKey">API Key</label>
+                  <input id="apiKey" type="password" placeholder="输入 API Key">
+                </div>
+                <div class="field-group">
+                  <label for="baseUrl">Base URL</label>
+                  <input id="baseUrl" type="text" placeholder="https://api.example.com/v1">
+                </div>
+                <div class="field-group">
+                  <label for="modelName">模型名称</label>
+                  <input id="modelName" type="text" value="gpt-4o" placeholder="gpt-4o">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>设定区</h2>
+            <span>System Prompt</span>
+          </div>
+          <div class="panel-body">
+            <div class="field-group">
+              <label for="systemPrompt">游戏背景 / 翻译上下文</label>
+              <textarea id="systemPrompt" placeholder="例如：这是一款赛博朋克题材的剧情向 RPG，角色语言风格需要保留个性，UI 文案尽量简洁，专有名词保持一致。"></textarea>
+              <div class="hint">当前阶段仅保留输入内容，不会发起任何 AI API 请求。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>文件与操作</h2>
+            <span>CSV Input</span>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="field-group">
+                <label for="csvFileInput">CSV / TXT 文件</label>
+                <div class="file-row">
+                  <label class="file-input" for="csvFileInput">
+                    <span>选择文件</span>
+                    <input id="csvFileInput" type="file" accept=".csv,.txt,text/csv,text/plain">
+                  </label>
+                  <div id="fileMeta" class="file-meta">未选择文件</div>
+                </div>
+                <div class="hint">支持 `.csv`、`.txt` 以及类似 `Localization.csv.txt` 的文件名。</div>
+              </div>
+
+              <div class="controls">
+                <div class="radio-group" role="radiogroup" aria-label="翻译模式">
+                  <label class="radio-card">
+                    <input type="radio" name="mode" value="translate-empty" checked>
+                    <span>仅翻译空白</span>
+                  </label>
+                  <label class="radio-card">
+                    <input type="radio" name="mode" value="force-overwrite">
+                    <span>强制覆写</span>
+                  </label>
+                </div>
+
+                <div class="button-group">
+                  <button id="translateBtn" class="primary" type="button">开始翻译</button>
+                  <button id="proofreadBtn" class="secondary" type="button">开始校对</button>
+                  <button id="exportBtn" class="ghost" type="button">导出 CSV</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="content">
+        <div class="preview-layout">
+          <div class="panel table-panel">
+            <div class="panel-header">
+              <h2>区域 A · CSV 预览</h2>
+              <div class="stats-strip">
+                <span id="rowCountChip" class="stat-chip">Rows: 0</span>
+                <span id="columnCountChip" class="stat-chip">Columns: 0</span>
+              </div>
+            </div>
+            <div id="tableWrap" class="table-wrap">
+              <div class="placeholder">
+                <div class="placeholder-card">
+                  <strong>等待 CSV 文件</strong>
+                  上传带表头的 CSV/TXT 后，这里会显示可滚动预览表格。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel log-panel">
+            <div class="panel-header">
+              <h2>区域 B · 日志与反馈</h2>
+              <span>AI Notes / Runtime Log</span>
+            </div>
+            <div id="logView" class="log-view"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let csvData = [];
+    let csvHeaders = [];
+    window.csvData = csvData;
+
+    const csvFileInput = document.getElementById("csvFileInput");
+    const fileMeta = document.getElementById("fileMeta");
+    const tableWrap = document.getElementById("tableWrap");
+    const logView = document.getElementById("logView");
+    const rowCountChip = document.getElementById("rowCountChip");
+    const columnCountChip = document.getElementById("columnCountChip");
+    const exportBtn = document.getElementById("exportBtn");
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function addLog(message, type = "info") {
+      const entry = document.createElement("div");
+      entry.className = "log-entry " + type;
+      entry.textContent = "[" + new Date().toLocaleTimeString() + "] " + message;
+      logView.appendChild(entry);
+      logView.scrollTop = logView.scrollHeight;
+    }
+
+    function updateStats(headers, rows) {
+      rowCountChip.textContent = "Rows: " + rows.length;
+      columnCountChip.textContent = "Columns: " + headers.length;
+    }
+
+    function setCsvData(parsedRows) {
+      csvData = parsedRows;
+      window.csvData = csvData;
+    }
+
+    function renderEmptyTableState(title, description) {
+      tableWrap.innerHTML = `
+        <div class="placeholder">
+          <div class="placeholder-card">
+            <strong>${escapeHtml(title)}</strong>
+            ${escapeHtml(description)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTable(headers, rows) {
+      if (!headers.length || !rows.length) {
+        renderEmptyTableState(
+          "没有可显示的数据",
+          "请确认文件包含表头，并且至少有一行有效数据。"
+        );
+        return;
+      }
+
+      const thead = [
+        "<thead><tr>",
+        '<th class="index-col">#</th>',
+        ...headers.map((header) => "<th>" + escapeHtml(header) + "</th>"),
+        "</tr></thead>"
+      ].join("");
+
+      const tbody = rows.map((row, index) => {
+        const cells = headers.map((header) => {
+          return "<td>" + escapeHtml(row[header] ?? "") + "</td>";
+        }).join("");
+
+        return "<tr><td class=\"index-col\">" + (index + 1) + "</td>" + cells + "</tr>";
+      }).join("");
+
+      tableWrap.innerHTML = "<table>" + thead + "<tbody>" + tbody + "</tbody></table>";
+    }
+
+    function buildExportRows(headers, rows) {
+      if (!headers.length) {
+        return rows;
+      }
+
+      return rows.map((row) => {
+        const orderedRow = {};
+        headers.forEach((header) => {
+          orderedRow[header] = row[header] ?? "";
+        });
+        return orderedRow;
+      });
+    }
+
+    function handleCsvFile(file) {
+      if (!file) {
+        return;
+      }
+
+      fileMeta.textContent = file.name + " (" + Math.max(1, Math.round(file.size / 1024)) + " KB)";
+      addLog("开始解析文件: " + file.name, "info");
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete(results) {
+          const headers = results.meta.fields || [];
+          const rows = (results.data || []).filter((row) => {
+            return Object.values(row).some((value) => String(value ?? "").trim() !== "");
+          });
+
+          csvHeaders = headers;
+          setCsvData(rows);
+          renderTable(csvHeaders, csvData);
+          updateStats(csvHeaders, csvData);
+
+          if (results.errors && results.errors.length) {
+            addLog("解析完成，但发现 " + results.errors.length + " 个格式问题。", "warning");
+            results.errors.slice(0, 3).forEach((error) => {
+              addLog("第 " + (error.row ?? "?") + " 行: " + error.message, "warning");
+            });
+          } else {
+            addLog("CSV 解析成功，已载入 " + csvData.length + " 行数据。", "success");
+          }
+
+          if (!headers.length) {
+            addLog("未检测到表头，请确认第一行为字段名。", "error");
+          } else {
+            addLog("检测到表头: " + headers.join(", "), "info");
+          }
+        },
+        error(error) {
+          csvHeaders = [];
+          setCsvData([]);
+          renderEmptyTableState("CSV 解析失败", "请检查文件格式或编码后重试。");
+          updateStats(csvHeaders, csvData);
+          addLog("CSV 解析失败: " + error.message, "error");
+        }
+      });
+    }
+
+    function exportCsvFile() {
+      if (!Array.isArray(window.csvData) || window.csvData.length === 0) {
+        addLog("当前没有可导出的数据，请先导入并成功解析 CSV/TXT 文件。", "warning");
+        return;
+      }
+
+      const rowsForExport = buildExportRows(csvHeaders, window.csvData);
+      const csvContent = Papa.unparse(rowsForExport, {
+        columns: csvHeaders.length ? csvHeaders : undefined
+      });
+      const blob = new Blob(["\uFEFF" + csvContent], {
+        type: "text/plain;charset=utf-8"
+      });
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = downloadUrl;
+      link.download = "Translated_Localization.csv.txt";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+
+      addLog("导出完成: Translated_Localization.csv.txt", "success");
+    }
+
+    csvFileInput.addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      handleCsvFile(file);
+    });
+
+    document.getElementById("translateBtn").addEventListener("click", () => {
+      addLog("当前阶段暂不执行“开始翻译”，仅保留本地导入、预览与导出流程。", "info");
+    });
+
+    document.getElementById("proofreadBtn").addEventListener("click", () => {
+      addLog("当前阶段暂不执行“开始校对”，后续可接入批处理逻辑。", "info");
+    });
+
+    exportBtn.addEventListener("click", exportCsvFile);
+
+    addLog("界面已初始化，等待上传 CSV/TXT 文件。", "info");
+    addLog("全局变量 window.csvData 已就绪，可用于后续翻译与导出阶段。", "success");
+  </script>
+</body>
+</html>
