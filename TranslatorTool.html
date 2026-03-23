@@ -911,6 +911,8 @@
     let selectedTargetLanguages = [];
     let analysisTimer = null;
     const excludedLanguageColumns = new Set(["key", "type", "desc"]);
+    const ANALYSIS_MAX_ROWS = 3000;
+    const ANALYSIS_SYSTEM_PROMPT = "你是一个资深的游戏本地化专家和剧情分析师。";
 
     window.csvData = csvData;
     window.totalTokens = totalTokens;
@@ -1022,6 +1024,70 @@
 
     function normalizeBaseUrl(url) {
       return (url || "").trim().replace(/\/+$/, "");
+    }
+
+    function getAnalysisSettings() {
+      const currentApiKey = settingsApiKey.value.trim() || apiKey || getStoredValue(STORAGE_KEYS.apiKey, "");
+      const currentBaseUrl = normalizeBaseUrl(settingsBaseUrl.value) || normalizeBaseUrl(baseUrl) || "https://api.openai.com/v1";
+      const currentModelName = settingsModelName.value.trim() || modelName || getStoredValue(STORAGE_KEYS.modelName, "GPT-5.4");
+
+      return {
+        apiKey: currentApiKey,
+        baseUrl: currentBaseUrl,
+        modelName: currentModelName
+      };
+    }
+
+    function buildAnalysisTextRows(baseLanguage) {
+      const descColumnName = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "desc") || "";
+      const availableRows = [];
+
+      csvData.forEach((row) => {
+        const baseText = String(row?.[baseLanguage] ?? "").replace(/\s+/g, " ").trim();
+        if (!baseText) {
+          return;
+        }
+
+        const descText = descColumnName
+          ? String(row?.[descColumnName] ?? "").replace(/\s+/g, " ").trim()
+          : "";
+
+        availableRows.push(`[Desc: ${descText}] ${baseText}`);
+      });
+
+      return {
+        descColumnName,
+        totalRows: availableRows.length,
+        wasTruncated: availableRows.length > ANALYSIS_MAX_ROWS,
+        rows: availableRows.slice(0, ANALYSIS_MAX_ROWS)
+      };
+    }
+
+    function extractAnalysisResponse(payload) {
+      const content = payload?.choices?.[0]?.message?.content;
+
+      if (typeof content === "string") {
+        return content.trim();
+      }
+
+      if (Array.isArray(content)) {
+        return content
+          .map((item) => {
+            if (typeof item === "string") {
+              return item;
+            }
+
+            if (item && typeof item.text === "string") {
+              return item.text;
+            }
+
+            return "";
+          })
+          .join("\n")
+          .trim();
+      }
+
+      return "";
     }
 
     function setDropZoneActive(isActive) {
@@ -1426,6 +1492,101 @@
       }, 260);
     }
 
+    async function startContextAnalysisRequest() {
+      if (analysisTimer) {
+        clearInterval(analysisTimer);
+        analysisTimer = null;
+      }
+
+      if (!window.csvData.length || !csvHeaders.length) {
+        addLog("请先上传并解析 CSV 文件，再进行全文分析。", "error");
+        return;
+      }
+
+      if (!selectedBaseLanguage) {
+        addLog("请先在语言配置中选择基准语言。", "error");
+        return;
+      }
+
+      const { apiKey: currentApiKey, baseUrl: currentBaseUrl, modelName: currentModelName } = getAnalysisSettings();
+      if (!currentApiKey) {
+        addLog("请先在偏好设置中填写 API Key，再进行全文分析。", "error");
+        return;
+      }
+
+      const analysisRows = buildAnalysisTextRows(selectedBaseLanguage);
+      if (!analysisRows.rows.length) {
+        addLog("当前基准语言列没有可用于分析的文本内容。", "error");
+        return;
+      }
+
+      if (analysisRows.wasTruncated) {
+        addLog("可分析文本超过 3000 行，已自动截取前 3000 行以避免超出模型上下文上限。", "warning");
+      }
+
+      const userPrompt = "这是我们悬疑解谜游戏的核心文本。请阅读并提炼出用于指导后续AI翻译的全局背景设定。\n"
+        + "要求包含：1. 故事背景简介 2. 主要人物性格及说话语气 3. 针对不同Desc（如对话、提示、UI）的文风建议 4. 整体本地化翻译原则。\n"
+        + "请直接输出提炼后的设定内容，可以直接作为系统提示词使用，不要带多余的客套话。\n"
+        + "文本内容如下：\n"
+        + analysisRows.rows.join("\n");
+
+      const originalButtonLabel = analyzeContextBtn.textContent;
+      analyzeContextBtn.disabled = true;
+      analyzeContextBtn.textContent = "分析中...";
+      addLog("🚀 正在分析全文剧情，请稍候...（这可能需要几十秒）", "info");
+
+      try {
+        const response = await fetch(currentBaseUrl + "/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + currentApiKey
+          },
+          body: JSON.stringify({
+            model: currentModelName,
+            messages: [
+              { role: "system", content: ANALYSIS_SYSTEM_PROMPT },
+              { role: "user", content: userPrompt }
+            ]
+          })
+        });
+
+        const responseText = await response.text();
+        let payload = {};
+
+        try {
+          payload = responseText ? JSON.parse(responseText) : {};
+        } catch (parseError) {
+          throw new Error("服务端返回了无法解析的响应: " + responseText.slice(0, 200));
+        }
+
+        if (!response.ok) {
+          const apiErrorMessage = payload?.error?.message || responseText.slice(0, 200) || (response.status + " " + response.statusText);
+          throw new Error("HTTP " + response.status + " " + response.statusText + " - " + apiErrorMessage);
+        }
+
+        const analysisContent = extractAnalysisResponse(payload);
+        if (!analysisContent) {
+          throw new Error("接口返回成功，但没有拿到有效的分析正文。");
+        }
+
+        systemPrompt.value = analysisContent;
+        promptDraftValue = analysisContent;
+        updatePromptPreview();
+
+        const consumedTokens = Number(payload?.usage?.total_tokens) || 0;
+        totalTokens += consumedTokens;
+        updateTokenLabel();
+
+        addLog("✅ 全文背景分析完成，已自动填入设定区！本次消耗 Token: " + consumedTokens, "success");
+      } catch (error) {
+        addLog("全文背景分析失败: " + error.message, "error");
+      } finally {
+        analyzeContextBtn.disabled = false;
+        analyzeContextBtn.textContent = originalButtonLabel;
+      }
+    }
+
     ["dragover", "drop"].forEach((eventName) => {
       window.addEventListener(eventName, (event) => {
         event.preventDefault();
@@ -1495,7 +1656,7 @@
     refreshModelsBtn.addEventListener("click", refreshModelList);
     settingsCancelBtn.addEventListener("click", closeSettingsModal);
     settingsSaveBtn.addEventListener("click", saveSettings);
-    analyzeContextBtn.addEventListener("click", startContextAnalysis);
+    analyzeContextBtn.addEventListener("click", startContextAnalysisRequest);
 
     document.getElementById("translateBtn").addEventListener("click", () => {
       addLog("当前阶段暂不执行真实翻译逻辑，后续可在这里接入批处理占位流程。", "info");
