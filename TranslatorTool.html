@@ -267,6 +267,76 @@
       transform: translateY(-1px);
     }
 
+    .input-with-action,
+    .model-input-row {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+    }
+
+    .input-shell {
+      position: relative;
+      flex: 1;
+    }
+
+    .input-shell input {
+      padding-right: 46px;
+    }
+
+    .refresh-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, opacity 0.18s ease;
+      font: inherit;
+    }
+
+    .input-action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      top: 50%;
+      right: 8px;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #c5d9f2;
+      transform: translateY(-50%);
+      transition: color 0.18s ease, opacity 0.18s ease, background 0.18s ease;
+    }
+
+    .input-action-btn:hover {
+      background: rgba(79, 195, 247, 0.08);
+      color: #eef7ff;
+      opacity: 0.8;
+    }
+
+    .refresh-btn {
+      flex: 0 0 auto;
+      min-width: 90px;
+      padding: 0 14px;
+      border: 1px solid rgba(79, 195, 247, 0.26);
+      background: rgba(79, 195, 247, 0.08);
+      color: #dff6ff;
+      white-space: nowrap;
+    }
+
+    .refresh-btn:hover {
+      border-color: rgba(79, 195, 247, 0.42);
+      background: rgba(79, 195, 247, 0.14);
+    }
+
+    .refresh-btn:disabled,
+    .input-action-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
     .drop-zone {
       position: relative;
       display: grid;
@@ -682,7 +752,12 @@
         <div class="modal-field-grid">
           <div class="field-group">
             <label for="settingsApiKey">API Key</label>
-            <input id="settingsApiKey" type="password" placeholder="输入 API Key">
+            <div class="input-with-action">
+              <div class="input-shell">
+                <input id="settingsApiKey" type="password" placeholder="输入 API Key">
+                <button id="toggleApiKeyVisibilityBtn" class="input-action-btn" type="button" aria-label="显示 API Key" title="显示 API Key">👁️</button>
+              </div>
+            </div>
           </div>
           <div class="field-group">
             <label for="settingsBaseUrl">Base URL</label>
@@ -693,7 +768,13 @@
         <div class="modal-field-grid">
           <div class="field-group">
             <label for="settingsModelName">模型名称</label>
-            <input id="settingsModelName" type="text" value="gpt-4o" placeholder="gpt-4o">
+            <div class="model-input-row">
+              <input id="settingsModelName" type="text" list="modelOptions" value="GPT-5.4" placeholder="请选择或输入模型">
+              <datalist id="modelOptions">
+                <option value="GPT-5.4"></option>
+              </datalist>
+              <button id="refreshModelsBtn" class="refresh-btn" type="button">刷新 🔄</button>
+            </div>
           </div>
         </div>
 
@@ -725,7 +806,7 @@
 
     let apiKey = "";
     let baseUrl = "https://api.openai.com/v1";
-    let modelName = "gpt-4o";
+    let modelName = "GPT-5.4";
     let typeMapping = "";
 
     window.csvData = csvData;
@@ -746,9 +827,12 @@
     const settingsApiKey = document.getElementById("settingsApiKey");
     const settingsBaseUrl = document.getElementById("settingsBaseUrl");
     const settingsModelName = document.getElementById("settingsModelName");
+    const modelOptions = document.getElementById("modelOptions");
     const settingsTypeMapping = document.getElementById("settingsTypeMapping");
     const settingsCancelBtn = document.getElementById("settingsCancelBtn");
     const settingsSaveBtn = document.getElementById("settingsSaveBtn");
+    const toggleApiKeyVisibilityBtn = document.getElementById("toggleApiKeyVisibilityBtn");
+    const refreshModelsBtn = document.getElementById("refreshModelsBtn");
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -770,6 +854,35 @@
     function updateTokenLabel() {
       tokenLabel.textContent = "🪙 Token 消耗: " + totalTokens;
       window.totalTokens = totalTokens;
+    }
+
+    function updateApiKeyVisibility(isVisible) {
+      settingsApiKey.type = isVisible ? "text" : "password";
+      toggleApiKeyVisibilityBtn.textContent = isVisible ? "🙈" : "👁️";
+      toggleApiKeyVisibilityBtn.setAttribute("aria-label", isVisible ? "隐藏 API Key" : "显示 API Key");
+      toggleApiKeyVisibilityBtn.setAttribute("title", isVisible ? "隐藏 API Key" : "显示 API Key");
+    }
+
+    function renderModelOptions(modelIds) {
+      const uniqueIds = [...new Set((modelIds || []).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      modelOptions.innerHTML = "";
+
+      if (!uniqueIds.length) {
+        const fallbackOption = document.createElement("option");
+        fallbackOption.value = "GPT-5.4";
+        modelOptions.appendChild(fallbackOption);
+        return;
+      }
+
+      uniqueIds.forEach((modelId) => {
+        const option = document.createElement("option");
+        option.value = modelId;
+        modelOptions.appendChild(option);
+      });
+    }
+
+    function normalizeBaseUrl(url) {
+      return (url || "").trim().replace(/\/+$/, "");
     }
 
     function setDropZoneActive(isActive) {
@@ -845,7 +958,7 @@
     function loadSettingsFromStorage() {
       apiKey = getStoredValue(STORAGE_KEYS.apiKey, "");
       baseUrl = getStoredValue(STORAGE_KEYS.baseUrl, "https://api.openai.com/v1");
-      modelName = getStoredValue(STORAGE_KEYS.modelName, "gpt-4o");
+      modelName = getStoredValue(STORAGE_KEYS.modelName, "GPT-5.4");
       typeMapping = getStoredValue(STORAGE_KEYS.typeMapping, "");
     }
 
@@ -854,6 +967,8 @@
       settingsBaseUrl.value = baseUrl;
       settingsModelName.value = modelName;
       settingsTypeMapping.value = typeMapping;
+      renderModelOptions([modelName, "GPT-5.4"]);
+      updateApiKeyVisibility(false);
     }
 
     function openSettingsModal() {
@@ -872,8 +987,8 @@
 
     function saveSettings() {
       apiKey = settingsApiKey.value.trim();
-      baseUrl = settingsBaseUrl.value.trim() || "https://api.openai.com/v1";
-      modelName = settingsModelName.value.trim() || "gpt-4o";
+      baseUrl = normalizeBaseUrl(settingsBaseUrl.value) || "https://api.openai.com/v1";
+      modelName = settingsModelName.value.trim() || "GPT-5.4";
       typeMapping = settingsTypeMapping.value.trim();
 
       try {
@@ -887,6 +1002,60 @@
       }
 
       closeSettingsModal();
+    }
+
+    async function refreshModelList() {
+      const currentApiKey = settingsApiKey.value.trim();
+      const currentBaseUrl = normalizeBaseUrl(settingsBaseUrl.value) || "https://api.openai.com/v1";
+
+      if (!currentApiKey) {
+        addLog("刷新模型列表失败：请先填写 API Key。", "error");
+        return;
+      }
+
+      refreshModelsBtn.disabled = true;
+      refreshModelsBtn.textContent = "刷新中...";
+      addLog("正在获取模型列表: " + currentBaseUrl + "/models", "info");
+
+      try {
+        const response = await fetch(currentBaseUrl + "/models", {
+          method: "GET",
+          headers: {
+            Authorization: "Bearer " + currentApiKey
+          }
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error("HTTP " + response.status + " " + response.statusText + (errorText ? " - " + errorText.slice(0, 180) : ""));
+        }
+
+        const payload = await response.json();
+        const rawModels = Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload?.data?.data)
+            ? payload.data.data
+            : [];
+        const modelIds = rawModels
+          .map((item) => item && item.id ? String(item.id) : "")
+          .filter(Boolean);
+
+        if (!modelIds.length) {
+          throw new Error("返回结果中没有可用的模型 ID。");
+        }
+
+        renderModelOptions(modelIds);
+        settingsModelName.value = "";
+        settingsModelName.placeholder = "请选择或输入模型";
+        settingsModelName.focus();
+
+        addLog("模型列表刷新成功，共载入 " + modelIds.length + " 个模型。", "success");
+      } catch (error) {
+        addLog("获取模型列表失败: " + error.message, "error");
+      } finally {
+        refreshModelsBtn.disabled = false;
+        refreshModelsBtn.textContent = "刷新 🔄";
+      }
     }
 
     function handleCsvFile(file) {
@@ -1026,20 +1195,12 @@
     });
 
     settingsBtn.addEventListener("click", openSettingsModal);
+    toggleApiKeyVisibilityBtn.addEventListener("click", () => {
+      updateApiKeyVisibility(settingsApiKey.type === "password");
+    });
+    refreshModelsBtn.addEventListener("click", refreshModelList);
     settingsCancelBtn.addEventListener("click", closeSettingsModal);
     settingsSaveBtn.addEventListener("click", saveSettings);
-
-    settingsModal.addEventListener("click", (event) => {
-      if (event.target === settingsModal) {
-        closeSettingsModal();
-      }
-    });
-
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && settingsModal.classList.contains("show")) {
-        closeSettingsModal();
-      }
-    });
 
     document.getElementById("translateBtn").addEventListener("click", () => {
       addLog("当前阶段暂不执行真实翻译逻辑，后续可在这里接入批处理占位流程。", "info");
