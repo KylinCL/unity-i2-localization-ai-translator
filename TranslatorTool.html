@@ -21,14 +21,12 @@
       --danger: #ff7b72;
       --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
       --radius: 18px;
-      --grid-gap: 18px;
+      --gap: 18px;
       --font-ui: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
       --font-mono: "Cascadia Code", "Consolas", monospace;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -54,14 +52,25 @@
       opacity: 0.18;
     }
 
+    body.modal-open { overflow: hidden; }
+
     .app-shell {
       position: relative;
       z-index: 1;
       display: flex;
       flex-direction: column;
-      gap: var(--grid-gap);
-      height: 100vh;
+      gap: var(--gap);
+      min-height: 100vh;
       padding: 24px;
+    }
+
+    .topbar,
+    .panel,
+    .modal-card {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, var(--panel), var(--panel-strong));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
     }
 
     .topbar {
@@ -69,28 +78,26 @@
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      padding: 20px 24px;
-      border: 1px solid var(--border);
+      padding: 18px 22px;
       border-radius: var(--radius);
-      background: linear-gradient(180deg, rgba(20, 27, 38, 0.92), rgba(14, 20, 29, 0.96));
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(18px);
     }
 
     .brand {
       display: flex;
       align-items: center;
       gap: 14px;
+      min-width: 0;
     }
 
     .brand-mark {
       width: 44px;
       height: 44px;
+      flex: 0 0 auto;
       border-radius: 14px;
-      background: linear-gradient(135deg, rgba(79, 195, 247, 0.28), rgba(33, 150, 243, 0.1));
-      border: 1px solid rgba(79, 195, 247, 0.35);
-      box-shadow: inset 0 0 24px rgba(79, 195, 247, 0.12);
       position: relative;
+      border: 1px solid rgba(79, 195, 247, 0.35);
+      background: linear-gradient(135deg, rgba(79, 195, 247, 0.28), rgba(33, 150, 243, 0.1));
+      box-shadow: inset 0 0 24px rgba(79, 195, 247, 0.12);
     }
 
     .brand-mark::before,
@@ -117,60 +124,87 @@
       background: rgba(79, 195, 247, 0.84);
     }
 
-    .brand h1 {
+    .brand-copy h1 {
       margin: 0;
-      font-size: 1.15rem;
-      font-weight: 700;
+      font-size: 1.12rem;
       letter-spacing: 0.04em;
     }
 
-    .brand p,
-    .status-note {
+    .brand-copy p {
       margin: 4px 0 0;
       color: var(--muted);
       font-size: 0.9rem;
     }
 
-    .status-note {
-      font-family: var(--font-mono);
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .token-pill {
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      font: 0.86rem var(--font-mono);
+      white-space: nowrap;
     }
 
     .workspace {
       display: grid;
-      grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
-      gap: var(--grid-gap);
+      grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+      gap: var(--gap);
       min-height: 0;
       flex: 1;
     }
 
     .sidebar,
-    .content {
+    .content,
+    .table-panel,
+    .log-panel {
       min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: var(--grid-gap);
+      gap: var(--gap);
     }
 
     .panel {
-      border: 1px solid var(--border);
       border-radius: var(--radius);
-      background: linear-gradient(180deg, var(--panel), var(--panel-strong));
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(16px);
       overflow: hidden;
     }
 
-    .panel-header {
+    .panel-header,
+    .panel-body,
+    .modal-header,
+    .modal-body,
+    .modal-footer {
+      padding: 18px;
+    }
+
+    .panel-header,
+    .modal-header,
+    .modal-footer {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      padding: 16px 18px 14px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+      gap: 12px;
     }
 
-    .panel-header h2 {
+    .panel-header,
+    .modal-header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .modal-footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      justify-content: flex-end;
+    }
+
+    .panel-header h2,
+    .modal-title {
       margin: 0;
       font-size: 0.96rem;
       font-weight: 700;
@@ -178,40 +212,32 @@
       text-transform: uppercase;
     }
 
-    .panel-header span {
+    .panel-header span,
+    .modal-subtitle,
+    .hint {
       color: var(--muted);
       font-size: 0.8rem;
+      line-height: 1.55;
     }
 
-    .panel-body {
-      padding: 18px;
-    }
-
-    .form-grid {
+    .form-grid,
+    .field-group,
+    .drop-zone-copy,
+    .modal-body {
       display: grid;
       gap: 14px;
     }
 
-    .field-group {
-      display: grid;
-      gap: 8px;
-    }
-
-    .field-row {
+    .modal-field-grid {
       display: grid;
       gap: 14px;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     label {
       font-size: 0.88rem;
       color: #c6d1df;
       font-weight: 600;
-    }
-
-    .hint {
-      font-size: 0.78rem;
-      color: var(--muted);
     }
 
     input[type="text"],
@@ -257,9 +283,6 @@
 
     .drop-zone:hover {
       border-color: rgba(79, 195, 247, 0.42);
-      background:
-        linear-gradient(180deg, rgba(79, 195, 247, 0.08), rgba(79, 195, 247, 0.03)),
-        rgba(10, 15, 23, 0.88);
     }
 
     .drop-zone:focus-visible {
@@ -276,12 +299,6 @@
       transform: translateY(-1px);
     }
 
-    .drop-zone-copy {
-      display: grid;
-      gap: 8px;
-      justify-items: start;
-    }
-
     .drop-zone-title {
       font-size: 1rem;
       font-weight: 700;
@@ -292,31 +309,6 @@
       color: var(--muted);
       font-size: 0.86rem;
       line-height: 1.6;
-    }
-
-    .file-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .file-input {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 14px;
-      border: 1px solid rgba(79, 195, 247, 0.26);
-      border-radius: 12px;
-      background: rgba(79, 195, 247, 0.08);
-      color: #dff6ff;
-      cursor: pointer;
-      transition: background 0.2s ease, border-color 0.2s ease;
-    }
-
-    .file-input:hover {
-      background: rgba(79, 195, 247, 0.14);
-      border-color: rgba(79, 195, 247, 0.4);
     }
 
     .hidden-file-input {
@@ -331,24 +323,27 @@
       border: 0;
     }
 
-    .file-meta {
-      color: var(--muted);
-      font-size: 0.84rem;
-      font-family: var(--font-mono);
-    }
-
-    .controls {
+    .file-row,
+    .controls,
+    .radio-group,
+    .button-group,
+    .stats-strip {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      justify-content: space-between;
-      gap: 14px;
+      gap: 12px;
     }
 
-    .radio-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
+    .controls {
+      justify-content: space-between;
+    }
+
+    .radio-card,
+    .stat-chip,
+    .file-input {
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
     }
 
     .radio-card {
@@ -356,16 +351,7 @@
       align-items: center;
       gap: 10px;
       padding: 10px 14px;
-      border-radius: 12px;
-      border: 1px solid rgba(103, 116, 136, 0.28);
-      background: rgba(14, 18, 26, 0.86);
-      color: #d0dae7;
       cursor: pointer;
-      transition: border-color 0.2s ease, background 0.2s ease;
-    }
-
-    .radio-card:hover {
-      border-color: rgba(79, 195, 247, 0.4);
     }
 
     .radio-card input {
@@ -373,10 +359,22 @@
       margin: 0;
     }
 
-    .button-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
+    .file-input {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      color: #dff6ff;
+      border-color: rgba(79, 195, 247, 0.26);
+      background: rgba(79, 195, 247, 0.08);
+      cursor: pointer;
+    }
+
+    .file-meta,
+    .stat-chip {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--muted);
     }
 
     button {
@@ -390,62 +388,47 @@
       transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
     }
 
-    button:hover {
-      transform: translateY(-1px);
-    }
+    button:hover { transform: translateY(-1px); }
 
-    button.primary {
+    .primary {
       background: linear-gradient(135deg, rgba(33, 150, 243, 0.92), rgba(79, 195, 247, 0.92));
       box-shadow: 0 10px 22px rgba(33, 150, 243, 0.22);
     }
 
-    button.secondary {
+    .secondary {
       background: rgba(255, 184, 107, 0.12);
       border-color: rgba(255, 184, 107, 0.24);
       color: #ffd9ab;
     }
 
-    button.ghost {
+    .ghost {
       background: rgba(255, 255, 255, 0.04);
       border-color: rgba(255, 255, 255, 0.08);
       color: #dce4ef;
     }
 
+    .settings-btn {
+      background: linear-gradient(135deg, rgba(79, 195, 247, 0.18), rgba(33, 150, 243, 0.16));
+      border-color: rgba(79, 195, 247, 0.34);
+      color: #e6f6ff;
+    }
+
     .preview-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.8fr);
-      gap: var(--grid-gap);
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.82fr);
+      gap: var(--gap);
       min-height: 0;
       flex: 1;
     }
 
-    .table-panel,
-    .log-panel {
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .stats-strip {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .stat-chip {
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      font-size: 0.78rem;
-      color: var(--muted);
-      font-family: var(--font-mono);
-    }
-
-    .table-wrap {
+    .table-wrap,
+    .log-view {
       min-height: 0;
       flex: 1;
       overflow: auto;
+    }
+
+    .table-wrap {
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0));
     }
 
@@ -460,7 +443,6 @@
       top: 0;
       z-index: 1;
       background: rgba(16, 22, 31, 0.97);
-      color: #dfe7f1;
       text-align: left;
       font-size: 0.84rem;
       letter-spacing: 0.04em;
@@ -481,9 +463,7 @@
       word-break: break-word;
     }
 
-    tbody tr:hover {
-      background: rgba(79, 195, 247, 0.05);
-    }
+    tbody tr:hover { background: rgba(79, 195, 247, 0.05); }
 
     .index-col {
       width: 72px;
@@ -492,9 +472,6 @@
     }
 
     .log-view {
-      min-height: 0;
-      flex: 1;
-      overflow: auto;
       padding: 18px;
       font-family: var(--font-mono);
       font-size: 0.86rem;
@@ -513,24 +490,10 @@
       background: rgba(255, 255, 255, 0.025);
     }
 
-    .log-entry.info {
-      border-color: rgba(79, 195, 247, 0.2);
-    }
-
-    .log-entry.success {
-      border-color: rgba(77, 208, 168, 0.22);
-      color: #cbffe8;
-    }
-
-    .log-entry.warning {
-      border-color: rgba(255, 184, 107, 0.22);
-      color: #ffe5c3;
-    }
-
-    .log-entry.error {
-      border-color: rgba(255, 123, 114, 0.24);
-      color: #ffd1cc;
-    }
+    .log-entry.info { border-color: rgba(79, 195, 247, 0.2); }
+    .log-entry.success { border-color: rgba(77, 208, 168, 0.22); color: #cbffe8; }
+    .log-entry.warning { border-color: rgba(255, 184, 107, 0.22); color: #ffe5c3; }
+    .log-entry.error { border-color: rgba(255, 123, 114, 0.24); color: #ffd1cc; }
 
     .placeholder {
       display: grid;
@@ -556,41 +519,50 @@
       font-size: 1rem;
     }
 
-    .status-led {
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      background: var(--success);
-      box-shadow: 0 0 12px rgba(77, 208, 168, 0.7);
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(3, 6, 10, 0.72);
+      backdrop-filter: blur(10px);
+    }
+
+    .modal-backdrop.show { display: flex; }
+
+    .modal-card {
+      width: min(720px, 100%);
+      max-height: min(88vh, 820px);
+      overflow: auto;
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(18, 24, 35, 0.98), rgba(11, 16, 24, 0.99));
     }
 
     @media (max-width: 1200px) {
-      body {
-        overflow: auto;
-      }
-
-      .app-shell {
-        height: auto;
-        min-height: 100vh;
-      }
-
+      body { overflow: auto; }
       .workspace,
       .preview-layout,
-      .field-row {
-        grid-template-columns: 1fr;
+      .modal-field-grid { grid-template-columns: 1fr; }
+      .table-wrap { max-height: 56vh; }
+      .log-view { min-height: 260px; }
+    }
+
+    @media (max-width: 820px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
       }
 
-      .preview-layout {
-        min-height: auto;
+      .header-actions {
+        width: 100%;
+        justify-content: space-between;
       }
 
-      .table-wrap {
-        max-height: 56vh;
-      }
-
-      .log-view {
-        min-height: 260px;
-      }
+      .app-shell { padding: 16px; }
+      .modal-backdrop { padding: 14px; }
     }
   </style>
 </head>
@@ -599,14 +571,14 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"></div>
-        <div>
+        <div class="brand-copy">
           <h1>Game CSV Translator Workbench</h1>
           <p>单文件 HTML 工具 · 本地 CSV 导入、拖拽预览与导出</p>
         </div>
       </div>
-      <div class="status-note">
-        <span class="status-led" aria-hidden="true" style="display:inline-block; margin-right:10px;"></span>
-        Ready / Local Workflow Mode
+      <div class="header-actions">
+        <div id="tokenLabel" class="token-pill">🪙 Token 消耗: 0</div>
+        <button id="settingsBtn" class="settings-btn" type="button">⚙️ 偏好设置</button>
       </div>
     </header>
 
@@ -614,39 +586,16 @@
       <section class="sidebar">
         <div class="panel">
           <div class="panel-header">
-            <h2>配置区</h2>
-            <span>Connection Settings</span>
-          </div>
-          <div class="panel-body">
-            <div class="form-grid">
-              <div class="field-row">
-                <div class="field-group">
-                  <label for="apiKey">API Key</label>
-                  <input id="apiKey" type="password" placeholder="输入 API Key">
-                </div>
-                <div class="field-group">
-                  <label for="baseUrl">Base URL</label>
-                  <input id="baseUrl" type="text" placeholder="https://api.example.com/v1">
-                </div>
-                <div class="field-group">
-                  <label for="modelName">模型名称</label>
-                  <input id="modelName" type="text" value="gpt-4o" placeholder="gpt-4o">
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-header">
             <h2>设定区</h2>
             <span>System Prompt</span>
           </div>
           <div class="panel-body">
-            <div class="field-group">
-              <label for="systemPrompt">游戏背景 / 翻译上下文</label>
-              <textarea id="systemPrompt" placeholder="例如：这是一款赛博朋克题材的剧情向 RPG，角色语言风格需要保留个性，UI 文案尽量简洁，专有名词保持一致。"></textarea>
-              <div class="hint">当前阶段仅保留输入内容，不会发起任何 AI API 请求。</div>
+            <div class="form-grid">
+              <div class="field-group">
+                <label for="systemPrompt">游戏背景 / 翻译上下文</label>
+                <textarea id="systemPrompt" placeholder="例如：这是一款赛博朋克题材的剧情向 RPG，角色语言风格需要保留个性，UI 文案尽量简洁，专有名词保持一致。"></textarea>
+                <div class="hint">当前阶段仅保留输入内容，不会发起任何真实 API 请求。</div>
+              </div>
             </div>
           </div>
         </div>
@@ -667,9 +616,7 @@
                     <div class="drop-zone-subtitle">支持 `.csv`、`.txt` 以及类似 `Localization.csv.txt` 的文件名。拖入后会立即解析并刷新右侧预览。</div>
                   </div>
                   <div class="file-row">
-                    <label class="file-input" for="csvFileInput">
-                      <span>选择文件</span>
-                    </label>
+                    <label class="file-input" for="csvFileInput"><span>选择文件</span></label>
                     <div id="fileMeta" class="file-meta">未选择文件</div>
                   </div>
                 </div>
@@ -677,16 +624,9 @@
 
               <div class="controls">
                 <div class="radio-group" role="radiogroup" aria-label="翻译模式">
-                  <label class="radio-card">
-                    <input type="radio" name="mode" value="translate-empty" checked>
-                    <span>仅翻译空白</span>
-                  </label>
-                  <label class="radio-card">
-                    <input type="radio" name="mode" value="force-overwrite">
-                    <span>强制覆写</span>
-                  </label>
+                  <label class="radio-card"><input type="radio" name="mode" value="translate-empty" checked><span>仅翻译空白</span></label>
+                  <label class="radio-card"><input type="radio" name="mode" value="force-overwrite"><span>强制覆写</span></label>
                 </div>
-
                 <div class="button-group">
                   <button id="translateBtn" class="primary" type="button">开始翻译</button>
                   <button id="proofreadBtn" class="secondary" type="button">开始校对</button>
@@ -730,11 +670,66 @@
     </main>
   </div>
 
+  <div id="settingsModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="settingsTitle" class="modal-title">偏好设置</h2>
+          <div class="modal-subtitle">本地保存 API 与映射配置，当前阶段不会发起真实请求。</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-field-grid">
+          <div class="field-group">
+            <label for="settingsApiKey">API Key</label>
+            <input id="settingsApiKey" type="password" placeholder="输入 API Key">
+          </div>
+          <div class="field-group">
+            <label for="settingsBaseUrl">Base URL</label>
+            <input id="settingsBaseUrl" type="text" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1">
+          </div>
+        </div>
+
+        <div class="modal-field-grid">
+          <div class="field-group">
+            <label for="settingsModelName">模型名称</label>
+            <input id="settingsModelName" type="text" value="gpt-4o" placeholder="gpt-4o">
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label for="settingsTypeMapping">Type Mapping (Desc 列映射规则)</label>
+          <textarea id="settingsTypeMapping" placeholder="例如：Comment=角色对话，请口语化；Tip=系统提示，客观简练。"></textarea>
+          <div class="hint">例如填写：Comment=角色对话，请口语化；Tip=系统提示，客观简练。翻译时会根据 Desc 列自动匹配对应语气。</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="settingsCancelBtn" class="ghost" type="button">取消</button>
+        <button id="settingsSaveBtn" class="primary" type="button">保存并关闭</button>
+      </div>
+    </div>
+  </div>
+
   <script>
+    const STORAGE_KEYS = {
+      apiKey: "translatorTool.apiKey",
+      baseUrl: "translatorTool.baseUrl",
+      modelName: "translatorTool.modelName",
+      typeMapping: "translatorTool.typeMapping"
+    };
+
     let csvData = [];
     let csvHeaders = [];
     let dragDepth = 0;
+    let totalTokens = 0;
+
+    let apiKey = "";
+    let baseUrl = "https://api.openai.com/v1";
+    let modelName = "gpt-4o";
+    let typeMapping = "";
+
     window.csvData = csvData;
+    window.totalTokens = totalTokens;
 
     const csvFileInput = document.getElementById("csvFileInput");
     const dropZone = document.getElementById("dropZone");
@@ -744,13 +739,23 @@
     const rowCountChip = document.getElementById("rowCountChip");
     const columnCountChip = document.getElementById("columnCountChip");
     const exportBtn = document.getElementById("exportBtn");
+    const tokenLabel = document.getElementById("tokenLabel");
+
+    const settingsBtn = document.getElementById("settingsBtn");
+    const settingsModal = document.getElementById("settingsModal");
+    const settingsApiKey = document.getElementById("settingsApiKey");
+    const settingsBaseUrl = document.getElementById("settingsBaseUrl");
+    const settingsModelName = document.getElementById("settingsModelName");
+    const settingsTypeMapping = document.getElementById("settingsTypeMapping");
+    const settingsCancelBtn = document.getElementById("settingsCancelBtn");
+    const settingsSaveBtn = document.getElementById("settingsSaveBtn");
 
     function escapeHtml(value) {
       return String(value ?? "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
+        .replace(/\"/g, "&quot;")
         .replace(/'/g, "&#39;");
     }
 
@@ -760,6 +765,11 @@
       entry.textContent = "[" + new Date().toLocaleTimeString() + "] " + message;
       logView.appendChild(entry);
       logView.scrollTop = logView.scrollHeight;
+    }
+
+    function updateTokenLabel() {
+      tokenLabel.textContent = "🪙 Token 消耗: " + totalTokens;
+      window.totalTokens = totalTokens;
     }
 
     function setDropZoneActive(isActive) {
@@ -789,10 +799,7 @@
 
     function renderTable(headers, rows) {
       if (!headers.length || !rows.length) {
-        renderEmptyTableState(
-          "没有可显示的数据",
-          "请确认文件包含表头，并且至少有一行有效数据。"
-        );
+        renderEmptyTableState("没有可显示的数据", "请确认文件包含表头，并且至少有一行有效数据。");
         return;
       }
 
@@ -804,10 +811,7 @@
       ].join("");
 
       const tbody = rows.map((row, index) => {
-        const cells = headers.map((header) => {
-          return "<td>" + escapeHtml(row[header] ?? "") + "</td>";
-        }).join("");
-
+        const cells = headers.map((header) => "<td>" + escapeHtml(row[header] ?? "") + "</td>").join("");
         return "<tr><td class=\"index-col\">" + (index + 1) + "</td>" + cells + "</tr>";
       }).join("");
 
@@ -828,6 +832,63 @@
       });
     }
 
+    function getStoredValue(key, fallbackValue) {
+      try {
+        const storedValue = localStorage.getItem(key);
+        return storedValue !== null ? storedValue : fallbackValue;
+      } catch (error) {
+        addLog("读取本地设置失败: " + error.message, "warning");
+        return fallbackValue;
+      }
+    }
+
+    function loadSettingsFromStorage() {
+      apiKey = getStoredValue(STORAGE_KEYS.apiKey, "");
+      baseUrl = getStoredValue(STORAGE_KEYS.baseUrl, "https://api.openai.com/v1");
+      modelName = getStoredValue(STORAGE_KEYS.modelName, "gpt-4o");
+      typeMapping = getStoredValue(STORAGE_KEYS.typeMapping, "");
+    }
+
+    function syncSettingsForm() {
+      settingsApiKey.value = apiKey;
+      settingsBaseUrl.value = baseUrl;
+      settingsModelName.value = modelName;
+      settingsTypeMapping.value = typeMapping;
+    }
+
+    function openSettingsModal() {
+      syncSettingsForm();
+      settingsModal.classList.add("show");
+      settingsModal.setAttribute("aria-hidden", "false");
+      document.body.classList.add("modal-open");
+      settingsApiKey.focus();
+    }
+
+    function closeSettingsModal() {
+      settingsModal.classList.remove("show");
+      settingsModal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+    }
+
+    function saveSettings() {
+      apiKey = settingsApiKey.value.trim();
+      baseUrl = settingsBaseUrl.value.trim() || "https://api.openai.com/v1";
+      modelName = settingsModelName.value.trim() || "gpt-4o";
+      typeMapping = settingsTypeMapping.value.trim();
+
+      try {
+        localStorage.setItem(STORAGE_KEYS.apiKey, apiKey);
+        localStorage.setItem(STORAGE_KEYS.baseUrl, baseUrl);
+        localStorage.setItem(STORAGE_KEYS.modelName, modelName);
+        localStorage.setItem(STORAGE_KEYS.typeMapping, typeMapping);
+        addLog("偏好设置已保存到 localStorage。", "success");
+      } catch (error) {
+        addLog("保存本地设置失败: " + error.message, "error");
+      }
+
+      closeSettingsModal();
+    }
+
     function handleCsvFile(file) {
       if (!file) {
         return;
@@ -841,9 +902,9 @@
         skipEmptyLines: true,
         complete(results) {
           const headers = results.meta.fields || [];
-          const rows = (results.data || []).filter((row) => {
-            return Object.values(row).some((value) => String(value ?? "").trim() !== "");
-          });
+          const rows = (results.data || []).filter((row) =>
+            Object.values(row).some((value) => String(value ?? "").trim() !== "")
+          );
 
           csvHeaders = headers;
           setCsvData(rows);
@@ -885,9 +946,7 @@
       const csvContent = Papa.unparse(rowsForExport, {
         columns: csvHeaders.length ? csvHeaders : undefined
       });
-      const blob = new Blob(["\uFEFF" + csvContent], {
-        type: "text/plain;charset=utf-8"
-      });
+      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/plain;charset=utf-8" });
       const downloadUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
 
@@ -923,11 +982,9 @@
     });
 
     dropZone.addEventListener("click", (event) => {
-      if (event.target.closest(".file-input")) {
-        return;
+      if (!event.target.closest(".file-input")) {
+        openFilePicker();
       }
-
-      openFilePicker();
     });
 
     dropZone.addEventListener("keydown", (event) => {
@@ -951,7 +1008,6 @@
     dropZone.addEventListener("dragleave", (event) => {
       event.preventDefault();
       dragDepth = Math.max(0, dragDepth - 1);
-
       if (dragDepth === 0) {
         setDropZoneActive(false);
       }
@@ -961,31 +1017,47 @@
       event.preventDefault();
       dragDepth = 0;
       setDropZoneActive(false);
-
-      const file = event.dataTransfer && event.dataTransfer.files
-        ? event.dataTransfer.files[0]
-        : null;
-
+      const file = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
       handleFileSelection(file, "拖拽");
     });
 
     csvFileInput.addEventListener("change", (event) => {
-      const file = event.target.files[0];
-      handleFileSelection(file, "选择");
+      handleFileSelection(event.target.files[0], "选择");
+    });
+
+    settingsBtn.addEventListener("click", openSettingsModal);
+    settingsCancelBtn.addEventListener("click", closeSettingsModal);
+    settingsSaveBtn.addEventListener("click", saveSettings);
+
+    settingsModal.addEventListener("click", (event) => {
+      if (event.target === settingsModal) {
+        closeSettingsModal();
+      }
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && settingsModal.classList.contains("show")) {
+        closeSettingsModal();
+      }
     });
 
     document.getElementById("translateBtn").addEventListener("click", () => {
-      addLog("当前阶段暂不执行“开始翻译”，仅保留本地导入、预览与导出流程。", "info");
+      addLog("当前阶段暂不执行真实翻译逻辑，后续可在这里接入批处理占位流程。", "info");
     });
 
     document.getElementById("proofreadBtn").addEventListener("click", () => {
-      addLog("当前阶段暂不执行“开始校对”，后续可接入批处理逻辑。", "info");
+      addLog("当前阶段暂不执行真实校对逻辑，后续可在这里接入批处理占位流程。", "info");
     });
 
     exportBtn.addEventListener("click", exportCsvFile);
 
+    loadSettingsFromStorage();
+    syncSettingsForm();
+    updateTokenLabel();
+
     addLog("界面已初始化，支持点击或拖拽上传 CSV/TXT 文件。", "info");
-    addLog("全局变量 window.csvData 已就绪，可用于后续翻译与导出阶段。", "success");
+    addLog("本地偏好设置已载入，可通过“⚙️ 偏好设置”查看或修改。", "success");
+    addLog("全局变量 window.csvData 与 window.totalTokens 已就绪。", "info");
   </script>
 </body>
 </html>
