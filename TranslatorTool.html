@@ -944,6 +944,7 @@
     const columnCountChip = document.getElementById("columnCountChip");
     const exportBtn = document.getElementById("exportBtn");
     const translateBtn = document.getElementById("translateBtn");
+    const proofreadBtn = document.getElementById("proofreadBtn");
     const stopTranslateBtn = document.getElementById("stopTranslateBtn");
     const tokenLabel = document.getElementById("tokenLabel");
     const languageConfigContainer = document.getElementById("languageConfigContainer");
@@ -1064,6 +1065,22 @@
       stopTranslateBtn.classList.add("hidden");
     }
 
+    function beginQueueRun(activeButton, busyLabel) {
+      window.isTranslating = true;
+      translateBtn.disabled = true;
+      proofreadBtn.disabled = true;
+      activeButton.textContent = busyLabel;
+      showStopTranslateButton();
+    }
+
+    function endQueueRun(activeButton, originalLabel) {
+      window.isTranslating = false;
+      translateBtn.disabled = false;
+      proofreadBtn.disabled = false;
+      activeButton.textContent = originalLabel;
+      hideStopTranslateButton();
+    }
+
     function getAnalysisSettings() {
       const currentApiKey = settingsApiKey.value.trim() || apiKey || getStoredValue(STORAGE_KEYS.apiKey, "");
       const currentBaseUrl = normalizeBaseUrl(settingsBaseUrl.value) || normalizeBaseUrl(baseUrl) || "https://api.openai.com/v1";
@@ -1178,6 +1195,39 @@
       return jobs;
     }
 
+    function buildProofreadJobs(targetLangs) {
+      const descColumnName = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "desc") || "";
+      const jobs = [];
+
+      csvData.forEach((row, index) => {
+        const baseText = String(row?.[selectedBaseLanguage] ?? "");
+        if (!baseText.trim()) {
+          return;
+        }
+
+        const currentTranslations = {};
+        targetLangs.forEach((lang) => {
+          const currentText = String(row?.[lang] ?? "");
+          if (currentText.trim()) {
+            currentTranslations[lang] = currentText;
+          }
+        });
+
+        if (!Object.keys(currentTranslations).length) {
+          return;
+        }
+
+        jobs.push({
+          row: index,
+          desc: descColumnName ? String(row?.[descColumnName] ?? "") : "",
+          baseText,
+          currentTranslations
+        });
+      });
+
+      return jobs;
+    }
+
     function chunkArray(items, size) {
       const chunks = [];
 
@@ -1195,7 +1245,7 @@
 
       jobs.forEach((job) => {
         currentBatch.push(job);
-        currentBatchCharCount += String(job.text ?? "").length;
+        currentBatchCharCount += String(job.text ?? job.baseText ?? "").length;
 
         if (currentBatch.length >= TRANSLATION_BATCH_SIZE || currentBatchCharCount > 1500) {
           batches.push(currentBatch);
@@ -1266,6 +1316,50 @@
       };
     }
 
+    function applyBatchProofreading(batchData, resultMap) {
+      let rowsUpdated = 0;
+      let cellsUpdated = 0;
+      const notes = [];
+
+      batchData.forEach((item) => {
+        const rowResult = resultMap?.[String(item.row)] ?? resultMap?.[item.row];
+        if (!rowResult || typeof rowResult !== "object" || Array.isArray(rowResult)) {
+          return;
+        }
+
+        let rowChanged = false;
+        Object.keys(item.currentTranslations || {}).forEach((lang) => {
+          if (!(lang in rowResult) || rowResult[lang] === undefined || rowResult[lang] === null) {
+            return;
+          }
+
+          const proofreadText = String(rowResult[lang]);
+          if (csvData[item.row][lang] !== proofreadText) {
+            csvData[item.row][lang] = proofreadText;
+            rowChanged = true;
+            cellsUpdated += 1;
+          }
+        });
+
+        const note = typeof rowResult._note === "string" ? rowResult._note.trim() : "";
+        if (rowChanged && note) {
+          notes.push({ row: item.row, note });
+        }
+
+        if (rowChanged) {
+          rowsUpdated += 1;
+        }
+      });
+
+      window.csvData = csvData;
+
+      return {
+        rowsUpdated,
+        cellsUpdated,
+        notes
+      };
+    }
+
     async function runTranslationBatch(batchData, batchNumber, totalBatches, settings) {
       const userPrompt = "请严格按照每个对象中 'translateTo' 数组指定的语种，对 'text' 进行翻译，并参考 'desc' 语气。\n"
         + "【重要规则】：绝对保留原文中的所有富文本标签（如 <color>）、占位符（如 {0}）以及换行符（\\n）。\n"
@@ -1274,6 +1368,68 @@
         + "格式必须严格如下：\n"
         + "{\"行索引1\": {\"语种A\": \"译文\", \"_note\": \"解释...\"}, \"行索引2\": {\"语种A\": \"译文\", \"语种B\": \"译文\"}}\n"
         + "待翻译数据如下：\n"
+        + JSON.stringify(batchData);
+
+      try {
+        const response = await fetch(settings.baseUrl + "/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + settings.apiKey
+          },
+          body: JSON.stringify({
+            model: settings.modelName,
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: settings.systemPrompt },
+              { role: "user", content: userPrompt }
+            ]
+          })
+        });
+
+        const responseText = await response.text();
+        let payload = {};
+
+        try {
+          payload = responseText ? JSON.parse(responseText) : {};
+        } catch (parseError) {
+          throw new Error("服务端返回了无法解析的响应: " + responseText.slice(0, 200));
+        }
+
+        if (!response.ok) {
+          const apiErrorMessage = payload?.error?.message || responseText.slice(0, 200) || (response.status + " " + response.statusText);
+          throw new Error("HTTP " + response.status + " " + response.statusText + " - " + apiErrorMessage);
+        }
+
+        const rawContent = extractAnalysisResponse(payload);
+        const resultMap = parseModelJsonObject(rawContent);
+
+        return {
+          success: true,
+          batchNumber,
+          totalBatches,
+          batchData,
+          resultMap,
+          consumedTokens: Number(payload?.usage?.total_tokens) || 0
+        };
+      } catch (error) {
+        return {
+          success: false,
+          batchNumber,
+          totalBatches,
+          batchData,
+          error
+        };
+      }
+    }
+
+    async function runProofreadBatch(batchData, batchNumber, totalBatches, settings) {
+      const userPrompt = "你是严苛的游戏 LQA（本地化质量保证）专家。请对比基准文本 'baseText' 和现有的译文 'currentTranslations'，并参考全局系统设定和 'desc' 语气。\n"
+        + "【重点检查】：1. 译文是否遗漏了原文的富文本标签（如 <color>）、占位符（如 {0}）或换行符（\\n）。2. 是否出现了违背背景设定的严重机翻或名词不统一。3. 语气是否严重偏离。\n"
+        + "【输出规则】：必须返回合法 JSON。如果某条译文完全合格，请绝对不要将其包含在返回结果中。只有当发现错误或需要优化时，才返回修改后的译文，并强制附带一个 '_note' 字段简短说明修改原因。\n"
+        + "格式示例：\n"
+        + "{\"行索引1\": {\"English\": \"修正后的译文\", \"_note\": \"补全了丢失的富文本标签\"}}\n"
+        + "待校对数据如下：\n"
         + JSON.stringify(batchData);
 
       try {
@@ -2064,6 +2220,253 @@
       }
     }
 
+    async function startTranslationRequest() {
+      const originalButtonLabel = translateBtn.textContent;
+      beginQueueRun(translateBtn, "翻译中...");
+
+      try {
+        if (!window.csvData.length || !csvHeaders.length) {
+          addLog("请先上传并解析 CSV 文件，再开始翻译。", "error");
+          return;
+        }
+
+        if (!selectedBaseLanguage) {
+          addLog("请先在语言配置中选择基准语言。", "error");
+          return;
+        }
+
+        const targetLangs = getSelectedTargetLanguages();
+        if (!targetLangs.length) {
+          addLog("请至少勾选一个目标语言。", "error");
+          return;
+        }
+
+        const {
+          apiKey: currentApiKey,
+          baseUrl: currentBaseUrl,
+          modelName: currentModelName,
+          systemPrompt: currentSystemPrompt,
+          concurrency
+        } = getTranslationSettings();
+
+        if (!currentApiKey) {
+          addLog("请先在偏好设置中填写 API Key，再开始翻译。", "error");
+          return;
+        }
+
+        const mode = document.querySelector('input[name="mode"]:checked')?.value || "translate-empty";
+        const translationJobs = buildTranslationJobs(targetLangs, mode);
+        if (!translationJobs.length) {
+          addLog("当前没有需要翻译的单元格。", "warning");
+          return;
+        }
+
+        const batches = buildDynamicBatches(translationJobs);
+        const batchGroups = chunkArray(batches, concurrency);
+        addLog("🚀 任务已动态切分为 " + batches.length + " 批，并发数: " + concurrency + "...", "info");
+
+        let shouldStopAfterGroup = false;
+
+        for (let groupIndex = 0; groupIndex < batchGroups.length; groupIndex += 1) {
+          if (!window.isTranslating) {
+            break;
+          }
+
+          const batchGroup = batchGroups[groupIndex];
+          const startBatchNumber = groupIndex * concurrency + 1;
+          const endBatchNumber = startBatchNumber + batchGroup.length - 1;
+          addLog("⏳ 正在向 AI 发送第 " + startBatchNumber + " 到 " + endBatchNumber + " 批请求...", "info");
+
+          const results = await Promise.all(
+            batchGroup.map((batchData, indexInGroup) => {
+              const batchNumber = startBatchNumber + indexInGroup;
+              return runTranslationBatch(batchData, batchNumber, batches.length, {
+                apiKey: currentApiKey,
+                baseUrl: currentBaseUrl,
+                modelName: currentModelName,
+                systemPrompt: currentSystemPrompt
+              });
+            })
+          );
+
+          let groupTokenSum = 0;
+          let groupFailed = false;
+
+          results.forEach((result) => {
+            if (!result.success) {
+              groupFailed = true;
+              addLog("第 " + result.batchNumber + "/" + result.totalBatches + " 批翻译失败：" + result.error.message, "error");
+              return;
+            }
+
+            const applyResult = applyBatchTranslations(result.batchData, result.resultMap);
+            groupTokenSum += result.consumedTokens;
+
+            applyResult.notes.forEach(({ row, note }) => {
+              addLog("💡 行 [" + (row + 1) + "] AI 巧思：" + note, "success");
+            });
+
+            addLog(
+              "第 " + result.batchNumber + "/" + result.totalBatches + " 批完成，已更新 "
+                + applyResult.rowsUpdated + " 行任务，"
+                + applyResult.cellsUpdated + " 个单元格。本批消耗 Token: "
+                + result.consumedTokens,
+              "success"
+            );
+          });
+
+          renderTable(csvHeaders, csvData);
+          updateStats(csvHeaders, csvData);
+          totalTokens += groupTokenSum;
+          updateTokenLabel();
+
+          if (groupFailed) {
+            shouldStopAfterGroup = true;
+          }
+
+          if (!window.isTranslating) {
+            addLog("⚠️ 翻译队列已在当前并发组后停止。", "warning");
+            break;
+          }
+
+          if (shouldStopAfterGroup) {
+            break;
+          }
+
+          if (groupIndex < batchGroups.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        }
+      } catch (error) {
+        addLog("批量翻译失败: " + error.message, "error");
+      } finally {
+        endQueueRun(translateBtn, originalButtonLabel);
+      }
+    }
+
+    async function startProofreadRequest() {
+      const originalButtonLabel = proofreadBtn.textContent;
+      beginQueueRun(proofreadBtn, "校对中...");
+
+      try {
+        if (!window.csvData.length || !csvHeaders.length) {
+          addLog("请先上传并解析 CSV 文件，再开始校对。", "error");
+          return;
+        }
+
+        if (!selectedBaseLanguage) {
+          addLog("请先在语言配置中选择基准语言。", "error");
+          return;
+        }
+
+        const targetLangs = getSelectedTargetLanguages();
+        if (!targetLangs.length) {
+          addLog("请至少勾选一个目标语言。", "error");
+          return;
+        }
+
+        const {
+          apiKey: currentApiKey,
+          baseUrl: currentBaseUrl,
+          modelName: currentModelName,
+          systemPrompt: currentSystemPrompt,
+          concurrency
+        } = getTranslationSettings();
+
+        if (!currentApiKey) {
+          addLog("请先在偏好设置中填写 API Key，再开始校对。", "error");
+          return;
+        }
+
+        const proofreadJobs = buildProofreadJobs(targetLangs);
+        if (!proofreadJobs.length) {
+          addLog("当前没有需要校对的单元格。", "warning");
+          return;
+        }
+
+        const batches = buildDynamicBatches(proofreadJobs);
+        const batchGroups = chunkArray(batches, concurrency);
+        addLog("🚀 校对任务已动态切分为 " + batches.length + " 批，并发数: " + concurrency + "...", "info");
+
+        let shouldStopAfterGroup = false;
+
+        for (let groupIndex = 0; groupIndex < batchGroups.length; groupIndex += 1) {
+          if (!window.isTranslating) {
+            break;
+          }
+
+          const batchGroup = batchGroups[groupIndex];
+          const startBatchNumber = groupIndex * concurrency + 1;
+          const endBatchNumber = startBatchNumber + batchGroup.length - 1;
+          addLog("⏳ 正在向 AI 发送第 " + startBatchNumber + " 到 " + endBatchNumber + " 批校对请求...", "info");
+
+          const results = await Promise.all(
+            batchGroup.map((batchData, indexInGroup) => {
+              const batchNumber = startBatchNumber + indexInGroup;
+              return runProofreadBatch(batchData, batchNumber, batches.length, {
+                apiKey: currentApiKey,
+                baseUrl: currentBaseUrl,
+                modelName: currentModelName,
+                systemPrompt: currentSystemPrompt
+              });
+            })
+          );
+
+          let groupTokenSum = 0;
+          let groupFailed = false;
+
+          results.forEach((result) => {
+            if (!result.success) {
+              groupFailed = true;
+              addLog("第 " + result.batchNumber + "/" + result.totalBatches + " 批校对失败：" + result.error.message, "error");
+              return;
+            }
+
+            const applyResult = applyBatchProofreading(result.batchData, result.resultMap);
+            groupTokenSum += result.consumedTokens;
+
+            applyResult.notes.forEach(({ row, note }) => {
+              addLog("🛠️ 行 [" + (row + 1) + "] 触发 LQA 修正：" + note, "success");
+            });
+
+            addLog(
+              "第 " + result.batchNumber + "/" + result.totalBatches + " 批校对完成，已修正 "
+                + applyResult.rowsUpdated + " 行，"
+                + applyResult.cellsUpdated + " 个单元格。本批消耗 Token: "
+                + result.consumedTokens,
+              "success"
+            );
+          });
+
+          renderTable(csvHeaders, csvData);
+          updateStats(csvHeaders, csvData);
+          totalTokens += groupTokenSum;
+          updateTokenLabel();
+
+          if (groupFailed) {
+            shouldStopAfterGroup = true;
+          }
+
+          if (!window.isTranslating) {
+            addLog("⚠️ 校对队列已在当前并发组后停止。", "warning");
+            break;
+          }
+
+          if (shouldStopAfterGroup) {
+            break;
+          }
+
+          if (groupIndex < batchGroups.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        }
+      } catch (error) {
+        addLog("批量校对失败: " + error.message, "error");
+      } finally {
+        endQueueRun(proofreadBtn, originalButtonLabel);
+      }
+    }
+
     ["dragover", "drop"].forEach((eventName) => {
       window.addEventListener(eventName, (event) => {
         event.preventDefault();
@@ -2141,9 +2544,7 @@
       addLog("⚠️ 用户已手动中止翻译队列。", "warning");
     });
 
-    document.getElementById("proofreadBtn").addEventListener("click", () => {
-      addLog("当前阶段暂不执行真实校对逻辑，后续可在这里接入批处理占位流程。", "info");
-    });
+    proofreadBtn.addEventListener("click", startProofreadRequest);
 
     exportBtn.addEventListener("click", exportCsvFile);
 
