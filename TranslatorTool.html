@@ -469,6 +469,11 @@
       border-color: rgba(79, 195, 247, 0.46);
       background: linear-gradient(135deg, rgba(79, 195, 247, 0.18), rgba(33, 150, 243, 0.18));
     }
+    .commit-btn {
+      background: linear-gradient(135deg, rgba(77, 208, 168, 0.18), rgba(76, 175, 80, 0.18));
+      border-color: rgba(77, 208, 168, 0.34);
+      color: #dcfff1;
+    }
     .file-input {
       display: inline-flex;
       align-items: center;
@@ -715,6 +720,109 @@
     .prompt-modal-card textarea {
       min-height: min(52vh, 420px);
     }
+    .commit-modal-card {
+      width: min(900px, 80vw);
+      height: 85vh;
+      max-height: 85vh;
+      overflow-y: auto;
+    }
+    .commit-summary-list {
+      display: grid;
+      gap: 12px;
+    }
+    .commit-item {
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.035);
+      display: grid;
+      gap: 8px;
+    }
+    .commit-item.is-reverted {
+      opacity: 0.64;
+      background: rgba(70, 76, 88, 0.4);
+      border-color: rgba(180, 188, 204, 0.12);
+    }
+    .commit-item-meta {
+      color: #ffe2b8;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .commit-item-context {
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .commit-diff {
+      display: grid;
+      gap: 8px;
+      color: #d6dfeb;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+    .commit-status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #ffe8bf;
+      background: rgba(255, 165, 0, 0.14);
+      border: 1px solid rgba(255, 165, 0, 0.24);
+    }
+    .commit-item-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .commit-label {
+      color: var(--muted);
+      margin-right: 6px;
+    }
+    .commit-arrow {
+      color: #ffbf66;
+      font-weight: 700;
+    }
+    .modal-toggle-btn {
+      justify-self: flex-start;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.04);
+      color: #f4d8b5;
+    }
+    .modal-toggle-btn:hover {
+      border-color: rgba(255, 184, 107, 0.35);
+      background: rgba(255, 184, 107, 0.12);
+    }
+    .commit-empty {
+      padding: 16px;
+      border-radius: 14px;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.025);
+    }
+    .commit-close-btn {
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: #dce7f5;
+      font-size: 1.25rem;
+      line-height: 1;
+    }
+    .commit-close-btn:hover {
+      border-color: rgba(255, 123, 114, 0.28);
+      background: rgba(255, 123, 114, 0.12);
+      color: #ffe2df;
+    }
 
     @media (max-width: 1200px) {
       .workspace {
@@ -833,6 +941,7 @@
                   <button id="translateBtn" class="primary" type="button">&#x5F00;&#x59CB;&#x7FFB;&#x8BD1;</button>
                   <button id="stopTranslateBtn" class="stop-btn hidden" type="button">🛑 停止翻译</button>
                   <button id="proofreadBtn" class="secondary" type="button">&#x5F00;&#x59CB;&#x6821;&#x5BF9;</button>
+                  <button id="commitBtn" class="commit-btn hidden" type="button">💾 审阅并保存</button>
                   <button id="exportBtn" class="ghost" type="button">&#x5BFC;&#x51FA; CSV</button>
                 </div>
               </div>
@@ -949,6 +1058,24 @@
       </div>
     </div>
   </div>
+  <div id="commitModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-card commit-modal-card" role="dialog" aria-modal="true" aria-labelledby="commitModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="commitModalTitle" class="modal-title">审阅修改</h2>
+          <div class="modal-subtitle">确认本轮 LQA 修改后，这些变更会被固化为最终结果，并清理历史记录。</div>
+        </div>
+        <button id="commitCloseBtn" class="commit-close-btn" type="button" aria-label="关闭审阅弹窗" title="关闭">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="commitSummaryContent" class="commit-summary-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="commitCancelBtn" class="ghost" type="button">取消</button>
+        <button id="commitConfirmBtn" class="primary" type="button">确认保存</button>
+      </div>
+    </div>
+  </div>
   <script>
     const STORAGE_KEYS = {
       apiKey: "translatorTool.apiKey",
@@ -970,6 +1097,7 @@
     let selectedBaseLanguage = "";
     let selectedTargetLanguages = [];
     let analysisTimer = null;
+    let hasPendingLQA = false;
     const excludedLanguageColumns = new Set(["key", "type", "desc"]);
     const ANALYSIS_MAX_ROWS = 3000;
     const ANALYSIS_SYSTEM_PROMPT = "你是一个资深的游戏本地化专家和剧情分析师。";
@@ -979,6 +1107,7 @@
     window.csvData = csvData;
     window.totalTokens = totalTokens;
     window.isTranslating = false;
+    window.hasPendingLQA = false;
 
     const csvFileInput = document.getElementById("csvFileInput");
     const dropZone = document.getElementById("dropZone");
@@ -990,6 +1119,7 @@
     const exportBtn = document.getElementById("exportBtn");
     const translateBtn = document.getElementById("translateBtn");
     const proofreadBtn = document.getElementById("proofreadBtn");
+    const commitBtn = document.getElementById("commitBtn");
     const stopTranslateBtn = document.getElementById("stopTranslateBtn");
     const tokenLabel = document.getElementById("tokenLabel");
     const languageConfigContainer = document.getElementById("languageConfigContainer");
@@ -1014,6 +1144,11 @@
     const settingsSaveBtn = document.getElementById("settingsSaveBtn");
     const toggleApiKeyVisibilityBtn = document.getElementById("toggleApiKeyVisibilityBtn");
     const refreshModelsBtn = document.getElementById("refreshModelsBtn");
+    const commitModal = document.getElementById("commitModal");
+    const commitSummaryContent = document.getElementById("commitSummaryContent");
+    const commitCancelBtn = document.getElementById("commitCancelBtn");
+    const commitConfirmBtn = document.getElementById("commitConfirmBtn");
+    const commitCloseBtn = document.getElementById("commitCloseBtn");
     let promptDraftValue = "";
 
     function escapeHtml(value) {
@@ -1050,6 +1185,119 @@
         + "<a href=\"#" + escapeHtml(rowId) + "\" class=\"table-row-link\" data-target-row=\"" + escapeHtml(rowId) + "\">行 [" + (row + 1) + "]</a> "
         + "<span class=\"lqa-lang\">[" + escapeHtml(lang) + "]</span> "
         + "LQA 修正：" + escapeHtml(note);
+    }
+
+    function setPendingLqaState(value) {
+      hasPendingLQA = Boolean(value);
+      window.hasPendingLQA = hasPendingLQA;
+    }
+
+    function syncPendingLqaState() {
+      window.hasPendingLQA = hasPendingLQA;
+
+      if (window.isTranslating) {
+        translateBtn.disabled = true;
+        proofreadBtn.disabled = true;
+        commitBtn.classList.add("hidden");
+        return;
+      }
+
+      if (hasPendingLQA) {
+        translateBtn.disabled = true;
+        proofreadBtn.disabled = true;
+        commitBtn.classList.remove("hidden");
+      } else {
+        translateBtn.disabled = false;
+        proofreadBtn.disabled = false;
+        commitBtn.classList.add("hidden");
+      }
+    }
+
+    function addTaskDividerLog(labelText = "") {
+      const suffix = labelText
+        ? " <span style=\"color:#9be7b3; font-size:0.92em;\">[" + escapeHtml(labelText) + "]</span>"
+        : "";
+      addLog(
+        "<div style=\"margin: 20px 0 10px 0; border-top: 2px dashed #666; padding-top: 10px; font-weight: bold; color: #4CAF50; font-size: 1.1em;\">==== 🟢 新一轮任务开始 ====" + suffix + "</div>",
+        "info",
+        { html: true }
+      );
+    }
+
+    function buildCommitSummaryHtml() {
+      const items = [];
+      const keyColumn = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "key") || "";
+      const descColumn = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "desc") || "";
+
+      csvData.forEach((row, rowIndex) => {
+        const historyMap = row?._lqaHistory;
+        if (!historyMap || typeof historyMap !== "object") {
+          return;
+        }
+
+        Object.entries(historyMap).forEach(([lang, history]) => {
+          const isReverted = history?.status === "original";
+          const keyValue = keyColumn ? String(row?.[keyColumn] ?? "") : "";
+          const descValue = descColumn ? String(row?.[descColumn] ?? "") : "";
+          items.push(
+            "<div class=\"commit-item" + (isReverted ? " is-reverted" : "") + "\">"
+              + "<div class=\"commit-item-topline\">"
+              + "<div class=\"commit-item-meta\">行 [" + (rowIndex + 1) + "] - [" + escapeHtml(lang) + "]</div>"
+              + (isReverted ? "<span class=\"commit-status-badge\">【已撤销/丢弃】</span>" : "")
+              + "</div>"
+              + "<div class=\"commit-item-context\">Key: " + escapeHtml(keyValue) + " | Desc: " + escapeHtml(descValue) + "</div>"
+              + "<div class=\"commit-diff\">"
+              + "<div><span class=\"commit-label\">原译文</span>" + escapeHtml(history?.originalText ?? "") + "</div>"
+              + "<div><span class=\"commit-arrow\">➔</span> " + escapeHtml(row?.[lang] ?? "") + "</div>"
+              + "<div><span class=\"commit-label\">原因</span>" + escapeHtml(history?.note ?? "") + "</div>"
+              + "</div>"
+              + "<button class=\"modal-toggle-btn\" type=\"button\" data-row=\"" + rowIndex + "\" data-lang=\"" + escapeHtml(lang) + "\">"
+              + (isReverted ? "🔄 恢复 AI 修改" : "❌ 撤销此修改")
+              + "</button>"
+              + "</div>"
+          );
+        });
+      });
+
+      return items.length
+        ? "<div class=\"commit-summary-list\">" + items.join("") + "</div>"
+        : "<div class=\"commit-empty\">当前没有待确认的 LQA 修改。</div>";
+    }
+
+    function openCommitModal() {
+      commitSummaryContent.innerHTML = buildCommitSummaryHtml();
+      commitModal.classList.add("show");
+      commitModal.setAttribute("aria-hidden", "false");
+      document.body.classList.add("modal-open");
+    }
+
+    function closeCommitModal() {
+      commitModal.classList.remove("show");
+      commitModal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+    }
+
+    function commitPendingLqaChanges() {
+      csvData.forEach((row) => {
+        if (row && row._lqaHistory) {
+          Object.entries(row._lqaHistory).forEach(([lang, history]) => {
+            if (history?.status === "original") {
+              row[lang] = history.originalText ?? "";
+            } else {
+              row[lang] = history?.aiText ?? row[lang] ?? "";
+            }
+          });
+          delete row._lqaHistory;
+        }
+      });
+
+      setPendingLqaState(false);
+      closeCommitModal();
+      window.csvData = csvData;
+      renderTable(csvHeaders, csvData);
+      updateStats(csvHeaders, csvData);
+      syncPendingLqaState();
+      addLog("✅ 已保存并合并所有 LQA 修改。历史记录已清理。", "success");
     }
 
     function updateTokenLabel() {
@@ -1132,16 +1380,16 @@
       window.isTranslating = true;
       translateBtn.disabled = true;
       proofreadBtn.disabled = true;
+      commitBtn.classList.add("hidden");
       activeButton.textContent = busyLabel;
       showStopTranslateButton();
     }
 
     function endQueueRun(activeButton, originalLabel) {
       window.isTranslating = false;
-      translateBtn.disabled = false;
-      proofreadBtn.disabled = false;
       activeButton.textContent = originalLabel;
       hideStopTranslateButton();
+      syncPendingLqaState();
     }
 
     function getAnalysisSettings() {
@@ -1383,6 +1631,7 @@
       let rowsUpdated = 0;
       let cellsUpdated = 0;
       const notes = [];
+      let createdPendingHistory = false;
 
       batchData.forEach((item) => {
         const rowResult = resultMap?.[String(item.row)] ?? resultMap?.[item.row];
@@ -1411,6 +1660,7 @@
             };
             rowData[lang] = proofreadText;
             rowChanged = true;
+            createdPendingHistory = true;
             cellsUpdated += 1;
             notes.push({ row: item.row, lang, note });
           }
@@ -1424,6 +1674,9 @@
       });
 
       window.csvData = csvData;
+      if (createdPendingHistory) {
+        setPendingLqaState(true);
+      }
 
       return {
         rowsUpdated,
@@ -1497,6 +1750,7 @@
 
     async function runProofreadBatch(batchData, batchNumber, totalBatches, settings) {
       const userPrompt = "你是严苛的游戏 LQA（本地化质量保证）专家。请对比基准文本 'baseText' 和现有的译文 'currentTranslations'，并参考全局系统设定和 'desc' 语气。\n"
+        + "【绝对基准】：必须且只能以 'baseText' 为唯一基准！绝不允许将一种外语（如 English）作为基准去审查另一种外语！请分别独立地拿每一种外语与 'baseText' 进行 1对1 对比校验。禁止外语之间互相干涉！\n"
         + "【重点检查】：1. 译文是否遗漏了原文的富文本标签（如 <color>）、占位符（如 {0}）或换行符（\\n）。2. 是否出现了违背背景设定的严重机翻或名词不统一。3. 语气是否严重偏离。\n"
         + "【输出规则】：必须返回合法 JSON。如果某条译文完全合格，请绝对不要将其包含在返回结果中。只有当发现错误或需要优化时，才返回修改后的译文，并强制附带一个 '_note' 字段简短说明修改原因。\n"
         + "格式示例：\n"
@@ -1569,6 +1823,11 @@
     function setCsvData(parsedRows) {
       csvData = parsedRows;
       window.csvData = csvData;
+      setPendingLqaState(false);
+      if (commitModal.classList.contains("show")) {
+        closeCommitModal();
+      }
+      syncPendingLqaState();
     }
 
     function renderEmptyTableState(title, description) {
@@ -1891,6 +2150,11 @@
     }
 
     function exportCsvFile() {
+      if (hasPendingLQA) {
+        alert("请先审阅并保存 LQA 修改结果！");
+        return;
+      }
+
       if (!Array.isArray(window.csvData) || window.csvData.length === 0) {
         addLog("当前没有可导出的数据，请先导入并成功解析 CSV/TXT 文件。", "warning");
         return;
@@ -2362,6 +2626,7 @@
           return;
         }
 
+        addTaskDividerLog("翻译");
         const batches = buildDynamicBatches(translationJobs);
         const batchGroups = chunkArray(batches, concurrency);
         addLog("🚀 任务已动态切分为 " + batches.length + " 批，并发数: " + concurrency + "...", "info");
@@ -2485,6 +2750,7 @@
           return;
         }
 
+        addTaskDividerLog("校对");
         const batches = buildDynamicBatches(proofreadJobs);
         const batchGroups = chunkArray(batches, concurrency);
         addLog("🚀 校对任务已动态切分为 " + batches.length + " 批，并发数: " + concurrency + "...", "info");
@@ -2649,6 +2915,47 @@
     });
 
     proofreadBtn.addEventListener("click", startProofreadRequest);
+    commitBtn.addEventListener("click", openCommitModal);
+    commitCancelBtn.addEventListener("click", closeCommitModal);
+    commitConfirmBtn.addEventListener("click", commitPendingLqaChanges);
+    commitCloseBtn.addEventListener("click", closeCommitModal);
+    commitModal.addEventListener("click", (event) => {
+      if (event.target === commitModal) {
+        closeCommitModal();
+      }
+    });
+    commitSummaryContent.addEventListener("click", (event) => {
+      const toggleBtn = event.target.closest(".modal-toggle-btn");
+      if (!toggleBtn) {
+        return;
+      }
+
+      event.preventDefault();
+      const rowIndex = Number(toggleBtn.dataset.row);
+      const lang = toggleBtn.dataset.lang;
+      if (!Number.isInteger(rowIndex) || rowIndex < 0 || !lang) {
+        return;
+      }
+
+      const rowData = csvData[rowIndex];
+      const history = rowData?._lqaHistory?.[lang];
+      if (!rowData || !history) {
+        return;
+      }
+
+      if (history.status === "original") {
+        history.status = "ai";
+        rowData[lang] = history.aiText ?? "";
+      } else {
+        history.status = "original";
+        rowData[lang] = history.originalText ?? "";
+      }
+
+      window.csvData = csvData;
+      commitSummaryContent.innerHTML = buildCommitSummaryHtml();
+      renderTable(csvHeaders, csvData);
+      updateStats(csvHeaders, csvData);
+    });
 
     tableWrap.addEventListener("click", (event) => {
       const toggleBtn = event.target.closest(".lqa-toggle-btn");
@@ -2707,6 +3014,7 @@
     renderLanguageConfig([]);
     updateTokenLabel();
     updatePromptPreview();
+    syncPendingLqaState();
 
     addLog("界面已初始化，支持点击或拖拽上传 CSV/TXT 文件。", "info");
     addLog("本地偏好设置已载入，可通过“⚙️ 偏好设置”查看或修改。", "success");
