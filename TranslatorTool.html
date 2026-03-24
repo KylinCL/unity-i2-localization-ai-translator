@@ -511,6 +511,14 @@
       border-color: rgba(255, 255, 255, 0.08);
       color: #dce4ef;
     }
+    .stop-btn {
+      background: rgba(255, 123, 114, 0.14);
+      border-color: rgba(255, 123, 114, 0.26);
+      color: #ffd4cf;
+    }
+    .hidden {
+      display: none !important;
+    }
     .settings-btn {
       background: linear-gradient(135deg, rgba(79, 195, 247, 0.18), rgba(33, 150, 243, 0.16));
       border-color: rgba(79, 195, 247, 0.34);
@@ -778,6 +786,7 @@
                 </div>
                 <div class="button-group">
                   <button id="translateBtn" class="primary" type="button">&#x5F00;&#x59CB;&#x7FFB;&#x8BD1;</button>
+                  <button id="stopTranslateBtn" class="stop-btn hidden" type="button">🛑 停止翻译</button>
                   <button id="proofreadBtn" class="secondary" type="button">&#x5F00;&#x59CB;&#x6821;&#x5BF9;</button>
                   <button id="exportBtn" class="ghost" type="button">&#x5BFC;&#x51FA; CSV</button>
                 </div>
@@ -864,6 +873,10 @@
             <label for="settingsBaseUrl">Base URL</label>
             <input id="settingsBaseUrl" type="text" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1">
           </div>
+          <div class="field-group">
+            <label for="settingsConcurrency">并发请求数</label>
+            <input id="settingsConcurrency" type="number" min="1" max="5" value="3" placeholder="1-5">
+          </div>
         </div>
 
         <div class="modal-field-grid">
@@ -896,7 +909,8 @@
       apiKey: "translatorTool.apiKey",
       baseUrl: "translatorTool.baseUrl",
       modelName: "translatorTool.modelName",
-      typeMapping: "translatorTool.typeMapping"
+      typeMapping: "translatorTool.typeMapping",
+      concurrency: "translatorTool.concurrency"
     };
 
     let csvData = [];
@@ -907,6 +921,7 @@
     let baseUrl = "https://api.openai.com/v1";
     let modelName = "GPT-5.4";
     let typeMapping = "";
+    let settingsConcurrency = 3;
     let selectedBaseLanguage = "";
     let selectedTargetLanguages = [];
     let analysisTimer = null;
@@ -918,6 +933,7 @@
 
     window.csvData = csvData;
     window.totalTokens = totalTokens;
+    window.isTranslating = false;
 
     const csvFileInput = document.getElementById("csvFileInput");
     const dropZone = document.getElementById("dropZone");
@@ -928,6 +944,7 @@
     const columnCountChip = document.getElementById("columnCountChip");
     const exportBtn = document.getElementById("exportBtn");
     const translateBtn = document.getElementById("translateBtn");
+    const stopTranslateBtn = document.getElementById("stopTranslateBtn");
     const tokenLabel = document.getElementById("tokenLabel");
     const languageConfigContainer = document.getElementById("languageConfigContainer");
     const systemPrompt = document.getElementById("systemPrompt");
@@ -943,6 +960,7 @@
     const settingsModal = document.getElementById("settingsModal");
     const settingsApiKey = document.getElementById("settingsApiKey");
     const settingsBaseUrl = document.getElementById("settingsBaseUrl");
+    const settingsConcurrencyInput = document.getElementById("settingsConcurrency");
     const settingsModelName = document.getElementById("settingsModelName");
     const modelOptions = document.getElementById("modelOptions");
     const settingsTypeMapping = document.getElementById("settingsTypeMapping");
@@ -1029,6 +1047,23 @@
       return (url || "").trim().replace(/\/+$/, "");
     }
 
+    function normalizeConcurrency(value) {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        return 3;
+      }
+
+      return Math.min(5, Math.max(1, Math.round(parsed)));
+    }
+
+    function showStopTranslateButton() {
+      stopTranslateBtn.classList.remove("hidden");
+    }
+
+    function hideStopTranslateButton() {
+      stopTranslateBtn.classList.add("hidden");
+    }
+
     function getAnalysisSettings() {
       const currentApiKey = settingsApiKey.value.trim() || apiKey || getStoredValue(STORAGE_KEYS.apiKey, "");
       const currentBaseUrl = normalizeBaseUrl(settingsBaseUrl.value) || normalizeBaseUrl(baseUrl) || "https://api.openai.com/v1";
@@ -1044,10 +1079,12 @@
     function getTranslationSettings() {
       const currentSettings = getAnalysisSettings();
       const currentSystemPrompt = systemPrompt.value.trim() || DEFAULT_TRANSLATION_SYSTEM_PROMPT;
+      const currentConcurrency = normalizeConcurrency(settingsConcurrencyInput?.value || settingsConcurrency || getStoredValue(STORAGE_KEYS.concurrency, "3"));
 
       return {
         ...currentSettings,
-        systemPrompt: currentSystemPrompt
+        systemPrompt: currentSystemPrompt,
+        concurrency: currentConcurrency
       };
     }
 
@@ -1151,6 +1188,29 @@
       return chunks;
     }
 
+    function buildDynamicBatches(jobs) {
+      const batches = [];
+      let currentBatch = [];
+      let currentBatchCharCount = 0;
+
+      jobs.forEach((job) => {
+        currentBatch.push(job);
+        currentBatchCharCount += String(job.text ?? "").length;
+
+        if (currentBatch.length >= TRANSLATION_BATCH_SIZE || currentBatchCharCount > 1500) {
+          batches.push(currentBatch);
+          currentBatch = [];
+          currentBatchCharCount = 0;
+        }
+      });
+
+      if (currentBatch.length) {
+        batches.push(currentBatch);
+      }
+
+      return batches;
+    }
+
     function parseModelJsonObject(content) {
       const normalized = String(content ?? "").trim();
       if (!normalized) {
@@ -1204,6 +1264,69 @@
         cellsUpdated,
         notes
       };
+    }
+
+    async function runTranslationBatch(batchData, batchNumber, totalBatches, settings) {
+      const userPrompt = "请严格按照每个对象中 'translateTo' 数组指定的语种，对 'text' 进行翻译，并参考 'desc' 语气。\n"
+        + "【重要规则】：绝对保留原文中的所有富文本标签（如 <color>）、占位符（如 {0}）以及换行符（\\n）。\n"
+        + "【绝对禁止无意义的解释】：99% 的常规翻译【绝对不允许】输出 '_note' 字段！只有当你使用了极其特殊的本地化技巧、双关语或特殊意译时，才极度克制地输出 '_note' 简短说明。违背此规则将导致严重的解析错误！\n"
+        + "必须返回合法的纯 JSON 对象。在返回每行的结果时，除了目标语种外，还可以附加一个 '_note' 字段。\n"
+        + "格式必须严格如下：\n"
+        + "{\"行索引1\": {\"语种A\": \"译文\", \"_note\": \"解释...\"}, \"行索引2\": {\"语种A\": \"译文\", \"语种B\": \"译文\"}}\n"
+        + "待翻译数据如下：\n"
+        + JSON.stringify(batchData);
+
+      try {
+        const response = await fetch(settings.baseUrl + "/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + settings.apiKey
+          },
+          body: JSON.stringify({
+            model: settings.modelName,
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: settings.systemPrompt },
+              { role: "user", content: userPrompt }
+            ]
+          })
+        });
+
+        const responseText = await response.text();
+        let payload = {};
+
+        try {
+          payload = responseText ? JSON.parse(responseText) : {};
+        } catch (parseError) {
+          throw new Error("服务端返回了无法解析的响应: " + responseText.slice(0, 200));
+        }
+
+        if (!response.ok) {
+          const apiErrorMessage = payload?.error?.message || responseText.slice(0, 200) || (response.status + " " + response.statusText);
+          throw new Error("HTTP " + response.status + " " + response.statusText + " - " + apiErrorMessage);
+        }
+
+        const rawContent = extractAnalysisResponse(payload);
+        const resultMap = parseModelJsonObject(rawContent);
+
+        return {
+          success: true,
+          batchNumber,
+          totalBatches,
+          batchData,
+          resultMap,
+          consumedTokens: Number(payload?.usage?.total_tokens) || 0
+        };
+      } catch (error) {
+        return {
+          success: false,
+          batchNumber,
+          totalBatches,
+          batchData,
+          error
+        };
+      }
     }
 
     function setDropZoneActive(isActive) {
@@ -1281,11 +1404,13 @@
       baseUrl = getStoredValue(STORAGE_KEYS.baseUrl, "https://api.openai.com/v1");
       modelName = getStoredValue(STORAGE_KEYS.modelName, "GPT-5.4");
       typeMapping = getStoredValue(STORAGE_KEYS.typeMapping, "");
+      settingsConcurrency = normalizeConcurrency(getStoredValue(STORAGE_KEYS.concurrency, "3"));
     }
 
     function syncSettingsForm() {
       settingsApiKey.value = apiKey;
       settingsBaseUrl.value = baseUrl;
+      settingsConcurrencyInput.value = settingsConcurrency;
       settingsModelName.value = modelName;
       settingsTypeMapping.value = typeMapping;
       settingsModelName.placeholder = "请选择或输入模型";
@@ -1312,12 +1437,15 @@
       baseUrl = normalizeBaseUrl(settingsBaseUrl.value) || "https://api.openai.com/v1";
       modelName = settingsModelName.value.trim() || "GPT-5.4";
       typeMapping = settingsTypeMapping.value.trim();
+      settingsConcurrency = normalizeConcurrency(settingsConcurrencyInput.value);
+      settingsConcurrencyInput.value = settingsConcurrency;
 
       try {
         localStorage.setItem(STORAGE_KEYS.apiKey, apiKey);
         localStorage.setItem(STORAGE_KEYS.baseUrl, baseUrl);
         localStorage.setItem(STORAGE_KEYS.modelName, modelName);
         localStorage.setItem(STORAGE_KEYS.typeMapping, typeMapping);
+        localStorage.setItem(STORAGE_KEYS.concurrency, String(settingsConcurrency));
         addLog("偏好设置已保存到 localStorage。", "success");
       } catch (error) {
         addLog("保存本地设置失败: " + error.message, "error");
@@ -1819,6 +1947,123 @@
       }
     }
 
+    async function startTranslationRequest() {
+      const originalButtonLabel = translateBtn.textContent;
+      window.isTranslating = true;
+      translateBtn.disabled = true;
+      translateBtn.textContent = "翻译中...";
+      showStopTranslateButton();
+
+      try {
+        if (!window.csvData.length || !csvHeaders.length) {
+          addLog("请先上传并解析 CSV 文件，再开始翻译。", "error");
+          return;
+        }
+
+        if (!selectedBaseLanguage) {
+          addLog("请先在语言配置中选择基准语言。", "error");
+          return;
+        }
+
+        const targetLangs = getSelectedTargetLanguages();
+        if (!targetLangs.length) {
+          addLog("请至少勾选一个目标语言。", "error");
+          return;
+        }
+
+        const { apiKey: currentApiKey, baseUrl: currentBaseUrl, modelName: currentModelName, systemPrompt: currentSystemPrompt, concurrency } = getTranslationSettings();
+        if (!currentApiKey) {
+          addLog("请先在偏好设置中填写 API Key，再开始翻译。", "error");
+          return;
+        }
+
+        const mode = document.querySelector('input[name=\"mode\"]:checked')?.value || "translate-empty";
+        const translationJobs = buildTranslationJobs(targetLangs, mode);
+        if (!translationJobs.length) {
+          addLog("当前没有需要翻译的单元格。", "warning");
+          return;
+        }
+
+        const batches = buildDynamicBatches(translationJobs);
+        const batchGroups = chunkArray(batches, concurrency);
+        addLog("🚀 任务已动态切分为 " + batches.length + " 批，并发数: " + concurrency + "...", "info");
+
+        let shouldStopAfterGroup = false;
+
+        for (let groupIndex = 0; groupIndex < batchGroups.length; groupIndex += 1) {
+          if (!window.isTranslating) {
+            break;
+          }
+
+          const batchGroup = batchGroups[groupIndex];
+          const startBatchNumber = groupIndex * concurrency + 1;
+          const endBatchNumber = startBatchNumber + batchGroup.length - 1;
+          addLog("⏳ 正在向 AI 发送第 " + startBatchNumber + " 到 " + endBatchNumber + " 批请求...", "info");
+
+          const results = await Promise.all(
+            batchGroup.map((batchData, indexInGroup) => {
+              const batchNumber = startBatchNumber + indexInGroup;
+              return runTranslationBatch(batchData, batchNumber, batches.length, {
+                apiKey: currentApiKey,
+                baseUrl: currentBaseUrl,
+                modelName: currentModelName,
+                systemPrompt: currentSystemPrompt
+              });
+            })
+          );
+
+          let groupTokenSum = 0;
+          let groupFailed = false;
+
+          results.forEach((result) => {
+            if (!result.success) {
+              groupFailed = true;
+              addLog("第 " + result.batchNumber + "/" + result.totalBatches + " 批翻译失败：" + result.error.message, "error");
+              return;
+            }
+
+            const applyResult = applyBatchTranslations(result.batchData, result.resultMap);
+            groupTokenSum += result.consumedTokens;
+
+            applyResult.notes.forEach(({ row, note }) => {
+              addLog("💡 行 [" + (row + 1) + "] AI 巧思：" + note, "success");
+            });
+
+            addLog("第 " + result.batchNumber + "/" + result.totalBatches + " 批完成，已更新 " + applyResult.rowsUpdated + " 行任务，" + applyResult.cellsUpdated + " 个单元格。本批消耗 Token: " + result.consumedTokens, "success");
+          });
+
+          renderTable(csvHeaders, csvData);
+          updateStats(csvHeaders, csvData);
+          totalTokens += groupTokenSum;
+          updateTokenLabel();
+
+          if (groupFailed) {
+            shouldStopAfterGroup = true;
+          }
+
+          if (!window.isTranslating) {
+            addLog("⚠️ 翻译队列已在当前并发组后停止。", "warning");
+            break;
+          }
+
+          if (shouldStopAfterGroup) {
+            break;
+          }
+
+          if (groupIndex < batchGroups.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        }
+      } catch (error) {
+        addLog("批量翻译失败: " + error.message, "error");
+      } finally {
+        window.isTranslating = false;
+        translateBtn.disabled = false;
+        translateBtn.textContent = originalButtonLabel;
+        hideStopTranslateButton();
+      }
+    }
+
     ["dragover", "drop"].forEach((eventName) => {
       window.addEventListener(eventName, (event) => {
         event.preventDefault();
@@ -1889,13 +2134,11 @@
     settingsCancelBtn.addEventListener("click", closeSettingsModal);
     settingsSaveBtn.addEventListener("click", saveSettings);
     analyzeContextBtn.addEventListener("click", startContextAnalysisRequest);
-    translateBtn.addEventListener("click", (event) => {
-      event.stopImmediatePropagation();
-      startTranslationRequest();
-    });
-
-    document.getElementById("translateBtn").addEventListener("click", () => {
-      addLog("当前阶段暂不执行真实翻译逻辑，后续可在这里接入批处理占位流程。", "info");
+    translateBtn.addEventListener("click", startTranslationRequest);
+    stopTranslateBtn.addEventListener("click", () => {
+      window.isTranslating = false;
+      hideStopTranslateButton();
+      addLog("⚠️ 用户已手动中止翻译队列。", "warning");
     });
 
     document.getElementById("proofreadBtn").addEventListener("click", () => {
