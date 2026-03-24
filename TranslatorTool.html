@@ -913,6 +913,8 @@
     const excludedLanguageColumns = new Set(["key", "type", "desc"]);
     const ANALYSIS_MAX_ROWS = 3000;
     const ANALYSIS_SYSTEM_PROMPT = "你是一个资深的游戏本地化专家和剧情分析师。";
+    const TRANSLATION_BATCH_SIZE = 30;
+    const DEFAULT_TRANSLATION_SYSTEM_PROMPT = "你是一个专业的游戏本地化翻译专家。请严格遵守要求，并只返回合法 JSON。";
 
     window.csvData = csvData;
     window.totalTokens = totalTokens;
@@ -925,6 +927,7 @@
     const rowCountChip = document.getElementById("rowCountChip");
     const columnCountChip = document.getElementById("columnCountChip");
     const exportBtn = document.getElementById("exportBtn");
+    const translateBtn = document.getElementById("translateBtn");
     const tokenLabel = document.getElementById("tokenLabel");
     const languageConfigContainer = document.getElementById("languageConfigContainer");
     const systemPrompt = document.getElementById("systemPrompt");
@@ -1038,6 +1041,25 @@
       };
     }
 
+    function getTranslationSettings() {
+      const currentSettings = getAnalysisSettings();
+      const currentSystemPrompt = systemPrompt.value.trim() || DEFAULT_TRANSLATION_SYSTEM_PROMPT;
+
+      return {
+        ...currentSettings,
+        systemPrompt: currentSystemPrompt
+      };
+    }
+
+    function getSelectedTargetLanguages() {
+      const targetLangs = Array.from(document.querySelectorAll(".target-language-checkbox:checked"))
+        .map((item) => item.value)
+        .filter((value) => value && value !== selectedBaseLanguage);
+
+      selectedTargetLanguages = targetLangs;
+      return targetLangs;
+    }
+
     function buildAnalysisTextRows(baseLanguage) {
       const descColumnName = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "desc") || "";
       const availableRows = [];
@@ -1088,6 +1110,100 @@
       }
 
       return "";
+    }
+
+    function buildTranslationJobs(targetLangs, mode) {
+      const descColumnName = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "desc") || "";
+      const jobs = [];
+
+      csvData.forEach((row, index) => {
+        const baseText = String(row?.[selectedBaseLanguage] ?? "");
+        if (!baseText.trim()) {
+          return;
+        }
+
+        const rowMissingLangs = mode === "force-overwrite"
+          ? targetLangs.slice()
+          : targetLangs.filter((lang) => String(row?.[lang] ?? "").trim() === "");
+
+        if (!rowMissingLangs.length) {
+          return;
+        }
+
+        jobs.push({
+          row: index,
+          desc: descColumnName ? String(row?.[descColumnName] ?? "") : "",
+          text: baseText,
+          translateTo: rowMissingLangs
+        });
+      });
+
+      return jobs;
+    }
+
+    function chunkArray(items, size) {
+      const chunks = [];
+
+      for (let index = 0; index < items.length; index += size) {
+        chunks.push(items.slice(index, index + size));
+      }
+
+      return chunks;
+    }
+
+    function parseModelJsonObject(content) {
+      const normalized = String(content ?? "").trim();
+      if (!normalized) {
+        throw new Error("模型没有返回可解析的 JSON 内容。");
+      }
+
+      const fencedMatch = normalized.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+      const jsonText = fencedMatch ? fencedMatch[1].trim() : normalized;
+      return JSON.parse(jsonText);
+    }
+
+    function applyBatchTranslations(batchData, resultMap) {
+      let rowsUpdated = 0;
+      let cellsUpdated = 0;
+      const notes = [];
+
+      batchData.forEach((item) => {
+        const rowResult = resultMap?.[String(item.row)] ?? resultMap?.[item.row];
+        if (!rowResult || typeof rowResult !== "object" || Array.isArray(rowResult)) {
+          return;
+        }
+
+        let rowChanged = false;
+        item.translateTo.forEach((lang) => {
+          if (!(lang in rowResult) || rowResult[lang] === undefined || rowResult[lang] === null) {
+            return;
+          }
+
+          const translatedText = String(rowResult[lang]);
+          if (csvData[item.row][lang] !== translatedText) {
+            csvData[item.row][lang] = translatedText;
+            rowChanged = true;
+            cellsUpdated += 1;
+          }
+        });
+
+        const note = typeof rowResult._note === "string" ? rowResult._note.trim() : "";
+        if (note) {
+          notes.push({ row: item.row, note });
+        }
+
+        if (rowChanged) {
+          rowsUpdated += 1;
+        }
+      });
+
+      window.csvData = csvData;
+
+      return {
+        rowsUpdated,
+        cellsUpdated,
+        notes
+      };
     }
 
     function setDropZoneActive(isActive) {
@@ -1591,6 +1707,118 @@
       }
     }
 
+    async function startTranslationRequest() {
+      const originalButtonLabel = translateBtn.textContent;
+      translateBtn.disabled = true;
+      translateBtn.textContent = "翻译中...";
+
+      try {
+        if (!window.csvData.length || !csvHeaders.length) {
+          addLog("请先上传并解析 CSV 文件，再开始翻译。", "error");
+          return;
+        }
+
+        if (!selectedBaseLanguage) {
+          addLog("请先在语言配置中选择基准语言。", "error");
+          return;
+        }
+
+        const targetLangs = getSelectedTargetLanguages();
+        if (!targetLangs.length) {
+          addLog("请至少勾选一个目标语言。", "error");
+          return;
+        }
+
+        const { apiKey: currentApiKey, baseUrl: currentBaseUrl, modelName: currentModelName, systemPrompt: currentSystemPrompt } = getTranslationSettings();
+        if (!currentApiKey) {
+          addLog("请先在偏好设置中填写 API Key，再开始翻译。", "error");
+          return;
+        }
+
+        const mode = document.querySelector('input[name="mode"]:checked')?.value || "translate-empty";
+        const translationJobs = buildTranslationJobs(targetLangs, mode);
+        if (!translationJobs.length) {
+          addLog("当前没有需要翻译的单元格。", "warning");
+          return;
+        }
+
+        const batches = chunkArray(translationJobs, TRANSLATION_BATCH_SIZE);
+        addLog("🚀 开始批量翻译，共 " + translationJobs.length + " 条任务，分为 " + batches.length + " 批。", "info");
+
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+          const batchData = batches[batchIndex];
+          const userPrompt = "请严格按照每个对象中 'translateTo' 数组指定的语种，对 'text' 进行翻译，并参考 'desc' 语气。\n"
+            + "【重要规则】：绝对保留原文中的所有富文本标签（如 <color>）、占位符（如 {0}）以及换行符（\\n）。\n"
+            + "必须返回合法的纯 JSON 对象。在返回每行的结果时，除了目标语种外，还可以附加一个 '_note' 字段，用于说明你在这行翻译中用到的小巧思、地道用词或针对语境的特殊处理（若无特殊处理则留空）。\n"
+            + "格式必须严格如下：\n"
+            + "{\"行索引1\": {\"语种A\": \"译文\", \"_note\": \"解释...\"}, \"行索引2\": {\"语种A\": \"译文\", \"语种B\": \"译文\"}}\n"
+            + "待翻译数据如下：\n"
+            + JSON.stringify(batchData);
+
+          try {
+            const response = await fetch(currentBaseUrl + "/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + currentApiKey
+              },
+              body: JSON.stringify({
+                model: currentModelName,
+                response_format: { type: "json_object" },
+                messages: [
+                  { role: "system", content: currentSystemPrompt },
+                  { role: "user", content: userPrompt }
+                ]
+              })
+            });
+
+            const responseText = await response.text();
+            let payload = {};
+
+            try {
+              payload = responseText ? JSON.parse(responseText) : {};
+            } catch (parseError) {
+              throw new Error("服务端返回了无法解析的响应: " + responseText.slice(0, 200));
+            }
+
+            if (!response.ok) {
+              const apiErrorMessage = payload?.error?.message || responseText.slice(0, 200) || (response.status + " " + response.statusText);
+              throw new Error("HTTP " + response.status + " " + response.statusText + " - " + apiErrorMessage);
+            }
+
+            const rawContent = extractAnalysisResponse(payload);
+            const resultMap = parseModelJsonObject(rawContent);
+            const applyResult = applyBatchTranslations(batchData, resultMap);
+
+            renderTable(csvHeaders, csvData);
+            updateStats(csvHeaders, csvData);
+
+            applyResult.notes.forEach(({ row, note }) => {
+              addLog("💡 行 [" + (row + 1) + "] AI 巧思：" + note, "success");
+            });
+
+            const consumedTokens = Number(payload?.usage?.total_tokens) || 0;
+            totalTokens += consumedTokens;
+            updateTokenLabel();
+
+            addLog("第 " + (batchIndex + 1) + "/" + batches.length + " 批完成，已更新 " + applyResult.rowsUpdated + " 行任务，" + applyResult.cellsUpdated + " 个单元格。本批消耗 Token: " + consumedTokens, "success");
+
+            if (batchIndex < batches.length - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+            }
+          } catch (error) {
+            addLog("第 " + (batchIndex + 1) + "/" + batches.length + " 批翻译失败：" + error.message, "error");
+            break;
+          }
+        }
+      } catch (error) {
+        addLog("批量翻译失败: " + error.message, "error");
+      } finally {
+        translateBtn.disabled = false;
+        translateBtn.textContent = originalButtonLabel;
+      }
+    }
+
     ["dragover", "drop"].forEach((eventName) => {
       window.addEventListener(eventName, (event) => {
         event.preventDefault();
@@ -1661,6 +1889,10 @@
     settingsCancelBtn.addEventListener("click", closeSettingsModal);
     settingsSaveBtn.addEventListener("click", saveSettings);
     analyzeContextBtn.addEventListener("click", startContextAnalysisRequest);
+    translateBtn.addEventListener("click", (event) => {
+      event.stopImmediatePropagation();
+      startTranslationRequest();
+    });
 
     document.getElementById("translateBtn").addEventListener("click", () => {
       addLog("当前阶段暂不执行真实翻译逻辑，后续可在这里接入批处理占位流程。", "info");
