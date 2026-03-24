@@ -581,6 +581,29 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+    .lqa-updated-cell {
+      background: rgba(255, 184, 77, 0.18);
+      box-shadow: inset 3px 0 0 rgba(255, 184, 77, 0.75);
+    }
+    .lqa-original-cell {
+      background: rgba(200, 208, 222, 0.08);
+      box-shadow: inset 3px 0 0 rgba(160, 171, 189, 0.35);
+    }
+    .cell-text { white-space: pre-wrap; }
+    .lqa-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 6px;
+      color: #ffd48b;
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.18s ease, opacity 0.18s ease;
+    }
+    .lqa-toggle-btn:hover {
+      color: #fff0c7;
+      opacity: 0.92;
+    }
     tbody tr:hover { background: rgba(79, 195, 247, 0.05); }
     .index-col { width: 72px; color: var(--muted); font-family: var(--font-mono); }
 
@@ -605,6 +628,28 @@
     .log-entry.success { border-color: rgba(77, 208, 168, 0.22); color: #cbffe8; }
     .log-entry.warning { border-color: rgba(255, 184, 107, 0.22); color: #ffe5c3; }
     .log-entry.error { border-color: rgba(255, 123, 114, 0.24); color: #ffd1cc; }
+    .log-entry.lqa {
+      border-color: rgba(255, 165, 0, 0.38);
+      background: rgba(255, 165, 0, 0.1);
+      color: #ffe2b8;
+    }
+    .log-time {
+      color: var(--muted);
+      margin-right: 6px;
+    }
+    .table-row-link {
+      color: #ffd700;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      cursor: pointer;
+    }
+    .table-row-link:hover {
+      color: #ffe89a;
+    }
+    .lqa-lang {
+      color: #ffbf66;
+      font-weight: 700;
+    }
     .progress-log { display: grid; gap: 10px; }
     .progress-label { color: #d9e8f7; }
     .progress-bar {
@@ -980,13 +1025,31 @@
         .replace(/'/g, "&#39;");
     }
 
-    function addLog(message, type = "info") {
+    function addLog(message, type = "info", options = {}) {
+      const { html = false, className = "" } = options;
       const entry = document.createElement("div");
-      entry.className = "log-entry " + type;
-      entry.textContent = "[" + new Date().toLocaleTimeString() + "] " + message;
+      entry.className = "log-entry " + type + (className ? " " + className : "");
+      const timestamp = "[" + new Date().toLocaleTimeString() + "]";
+      if (html) {
+        entry.innerHTML = "<span class=\"log-time\">" + escapeHtml(timestamp) + "</span> " + message;
+      } else {
+        entry.textContent = timestamp + " " + message;
+      }
       logView.appendChild(entry);
       logView.scrollTop = logView.scrollHeight;
       return entry;
+    }
+
+    function escapeTitleText(value) {
+      return escapeHtml(String(value ?? "")).replace(/\r?\n/g, "&#10;");
+    }
+
+    function buildLqaLogHtml(row, lang, note) {
+      const rowId = "table-row-" + row;
+      return "<span style=\"color: #FFA500;\">🛠️ </span>"
+        + "<a href=\"#" + escapeHtml(rowId) + "\" class=\"table-row-link\" data-target-row=\"" + escapeHtml(rowId) + "\">行 [" + (row + 1) + "]</a> "
+        + "<span class=\"lqa-lang\">[" + escapeHtml(lang) + "]</span> "
+        + "LQA 修正：" + escapeHtml(note);
     }
 
     function updateTokenLabel() {
@@ -1328,26 +1391,35 @@
         }
 
         let rowChanged = false;
+        const rowData = csvData[item.row];
+        rowData._lqaHistory = rowData._lqaHistory || {};
+
         Object.keys(item.currentTranslations || {}).forEach((lang) => {
           if (!(lang in rowResult) || rowResult[lang] === undefined || rowResult[lang] === null) {
             return;
           }
 
           const proofreadText = String(rowResult[lang]);
-          if (csvData[item.row][lang] !== proofreadText) {
-            csvData[item.row][lang] = proofreadText;
+          const oldText = String(rowData[lang] ?? "");
+          if (oldText !== proofreadText) {
+            const note = typeof rowResult._note === "string" ? rowResult._note.trim() : "";
+            rowData._lqaHistory[lang] = {
+              originalText: oldText,
+              aiText: proofreadText,
+              note,
+              status: "ai"
+            };
+            rowData[lang] = proofreadText;
             rowChanged = true;
             cellsUpdated += 1;
+            notes.push({ row: item.row, lang, note });
           }
         });
 
-        const note = typeof rowResult._note === "string" ? rowResult._note.trim() : "";
-        if (rowChanged && note) {
-          notes.push({ row: item.row, note });
-        }
-
         if (rowChanged) {
           rowsUpdated += 1;
+        } else if (rowData._lqaHistory && !Object.keys(rowData._lqaHistory).length) {
+          delete rowData._lqaHistory;
         }
       });
 
@@ -1524,8 +1596,37 @@
       ].join("");
 
       const tbody = rows.map((row, index) => {
-        const cells = headers.map((header) => "<td>" + escapeHtml(row[header] ?? "") + "</td>").join("");
-        return "<tr><td class=\"index-col\">" + (index + 1) + "</td>" + cells + "</tr>";
+        const cells = headers.map((header) => {
+          const lqaHistory = row?._lqaHistory?.[header];
+          const currentStatus = lqaHistory?.status === "original" ? "original" : "ai";
+          const displayText = lqaHistory
+            ? (currentStatus === "ai" ? String(lqaHistory.aiText ?? row[header] ?? "") : String(lqaHistory.originalText ?? row[header] ?? ""))
+            : String(row[header] ?? "");
+          const titleText = lqaHistory
+            ? (currentStatus === "ai"
+              ? "原译文: " + String(lqaHistory.originalText ?? "") + "\n原因: " + String(lqaHistory.note ?? "")
+              : "AI译文: " + String(lqaHistory.aiText ?? "") + "\n原因: " + String(lqaHistory.note ?? ""))
+            : "";
+          const cellClass = lqaHistory
+            ? ' class="' + (currentStatus === "ai" ? "lqa-updated-cell" : "lqa-original-cell") + '"'
+            : "";
+          const titleAttr = lqaHistory ? ' title="' + escapeTitleText(titleText) + '"' : "";
+          const toggleControl = lqaHistory
+            ? ' <span class="lqa-toggle-btn" data-row="' + index + '" data-lang="' + escapeHtml(header) + '" title="'
+              + escapeTitleText(titleText)
+              + '">'
+              + (currentStatus === "ai" ? "↩️" : "🔄")
+              + "</span>"
+            : "";
+
+          return "<td" + cellClass + titleAttr + "><span class=\"cell-text\">"
+            + escapeHtml(displayText)
+            + "</span>"
+            + toggleControl
+            + "</td>";
+        }).join("");
+
+        return "<tr id=\"table-row-" + index + "\"><td class=\"index-col\">" + (index + 1) + "</td>" + cells + "</tr>";
       }).join("");
 
       tableWrap.innerHTML = "<table>" + thead + "<tbody>" + tbody + "</tbody></table>";
@@ -2425,8 +2526,11 @@
             const applyResult = applyBatchProofreading(result.batchData, result.resultMap);
             groupTokenSum += result.consumedTokens;
 
-            applyResult.notes.forEach(({ row, note }) => {
-              addLog("🛠️ 行 [" + (row + 1) + "] 触发 LQA 修正：" + note, "success");
+            applyResult.notes.forEach(({ row, lang, note }) => {
+              addLog(buildLqaLogHtml(row, lang, note || "已根据 LQA 规则完成修正。"), "info", {
+                html: true,
+                className: "lqa"
+              });
             });
 
             addLog(
@@ -2545,6 +2649,56 @@
     });
 
     proofreadBtn.addEventListener("click", startProofreadRequest);
+
+    tableWrap.addEventListener("click", (event) => {
+      const toggleBtn = event.target.closest(".lqa-toggle-btn");
+      if (!toggleBtn) {
+        return;
+      }
+
+      event.preventDefault();
+      const rowIndex = Number(toggleBtn.dataset.row);
+      const lang = toggleBtn.dataset.lang;
+      if (!Number.isInteger(rowIndex) || rowIndex < 0 || !lang) {
+        return;
+      }
+
+      const rowData = csvData[rowIndex];
+      const history = rowData?._lqaHistory?.[lang];
+      if (!rowData || !history) {
+        return;
+      }
+
+      if (history.status === "original") {
+        history.status = "ai";
+        rowData[lang] = history.aiText ?? "";
+      } else {
+        history.status = "original";
+        rowData[lang] = history.originalText ?? "";
+      }
+
+      window.csvData = csvData;
+      renderTable(csvHeaders, csvData);
+      updateStats(csvHeaders, csvData);
+    });
+
+    logView.addEventListener("click", (event) => {
+      const rowLink = event.target.closest(".table-row-link");
+      if (!rowLink) {
+        return;
+      }
+
+      event.preventDefault();
+      const targetId = rowLink.dataset.targetRow || String(rowLink.getAttribute("href") || "").replace(/^#/, "");
+      if (!targetId) {
+        return;
+      }
+
+      const targetRow = document.getElementById(targetId);
+      if (targetRow) {
+        targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
 
     exportBtn.addEventListener("click", exportCsvFile);
 
