@@ -8,10 +8,10 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0d1117;
-      --panel: rgba(20, 27, 38, 0.92);
-      --panel-strong: rgba(15, 21, 31, 0.98);
-      --border: rgba(120, 138, 165, 0.22);
+      --bg: #121212;
+      --panel: rgba(24, 24, 27, 0.96);
+      --panel-strong: rgba(18, 18, 21, 0.99);
+      --border: rgba(255, 255, 255, 0.08);
       --text: #e6edf3;
       --muted: #8b98ab;
       --accent: #4fc3f7;
@@ -42,9 +42,9 @@
       font-family: var(--font-ui);
       color: var(--text);
       background:
-        radial-gradient(circle at top left, rgba(33, 150, 243, 0.18), transparent 28%),
-        radial-gradient(circle at top right, rgba(79, 195, 247, 0.12), transparent 24%),
-        linear-gradient(180deg, #0b1018 0%, #0d1117 40%, #090c12 100%);
+      radial-gradient(circle at top left, rgba(33, 150, 243, 0.14), transparent 26%),
+      radial-gradient(circle at top right, rgba(79, 195, 247, 0.08), transparent 20%),
+      linear-gradient(180deg, #101114 0%, #121212 42%, #0d0d0f 100%);
     }
 
     body::before {
@@ -60,15 +60,15 @@
     }
 
     body.modal-open { overflow: hidden; }
-    *::-webkit-scrollbar { width: 8px; height: 8px; }
+    *::-webkit-scrollbar { width: 6px; height: 6px; }
     *::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.03);
+      background: rgba(255, 255, 255, 0.02);
       border-radius: 999px;
     }
     *::-webkit-scrollbar-thumb {
       border-radius: 999px;
-      background: rgba(92, 104, 124, 0.9);
-      border: 2px solid transparent;
+      background: rgba(88, 88, 96, 0.95);
+      border: 1px solid transparent;
       background-clip: content-box;
     }
     *::-webkit-scrollbar-corner {
@@ -165,6 +165,8 @@
       overflow-x: hidden;
       padding-right: 6px;
       padding-bottom: 8px;
+      background: rgba(18, 18, 18, 0.62);
+      border-radius: 22px;
     }
 
     .sidebar::-webkit-scrollbar {
@@ -193,6 +195,8 @@
       max-height: none !important;
       min-height: min-content;
       flex-shrink: 0;
+      border-color: rgba(255, 255, 255, 0.07);
+      background: linear-gradient(180deg, rgba(24, 24, 27, 0.98), rgba(18, 18, 21, 0.99));
     }
     .sidebar .panel-body,
     .sidebar .language-config-card {
@@ -552,10 +556,16 @@
       overflow: hidden;
     }
     .table-wrap, .log-view { min-height: 0; flex: 1; }
+    .table-panel,
+    .log-panel {
+      background: linear-gradient(180deg, rgba(31, 31, 35, 0.98), rgba(39, 39, 42, 0.96));
+      border: 1px solid #333;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+    }
     .table-wrap {
       overflow: auto;
       overscroll-behavior: contain;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0));
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.008));
     }
     .log-view {
       overflow-y: auto;
@@ -566,8 +576,9 @@
     thead th {
       position: sticky;
       top: 0;
-      z-index: 1;
-      background: rgba(16, 22, 31, 0.97);
+      z-index: 10;
+      background: rgba(31, 31, 35, 0.98);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
       text-align: left;
       font-size: 0.84rem;
       letter-spacing: 0.04em;
@@ -619,8 +630,26 @@
       line-height: 1.55;
       color: #c2d0e3;
       background:
-        linear-gradient(180deg, rgba(79, 195, 247, 0.04), transparent 38%),
-        rgba(10, 14, 20, 0.92);
+        linear-gradient(180deg, rgba(79, 195, 247, 0.035), transparent 36%),
+        rgba(39, 39, 42, 0.96);
+    }
+    .terminal-tools {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .log-clear-btn {
+      padding: 6px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.05);
+      color: #d7e2ef;
+      font-size: 0.8rem;
+      line-height: 1;
+    }
+    .log-clear-btn:hover {
+      border-color: rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.1);
     }
     .log-entry {
       margin: 0 0 10px;
@@ -715,16 +744,19 @@
       background: linear-gradient(180deg, rgba(18, 24, 35, 0.98), rgba(11, 16, 24, 0.99));
     }
     .prompt-modal-card {
-      width: min(860px, 100%);
+      width: min(1000px, 80vw);
+      max-width: 1000px;
     }
     .prompt-modal-card textarea {
-      min-height: min(52vh, 420px);
+      height: 50vh;
+      min-height: 400px;
     }
     .commit-modal-card {
       width: min(900px, 80vw);
       height: 85vh;
       max-height: 85vh;
       overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .commit-summary-list {
       display: grid;
@@ -857,7 +889,7 @@
         <div class="brand-mark" aria-hidden="true"></div>
         <div class="brand-copy">
           <h1>Game CSV Translator Workbench</h1>
-          <p>单文件 HTML 工具 · 本地 CSV 导入、动态语言选择与导出</p>
+          <p>AI 驱动的本地化翻译与 LQA 引擎</p>
         </div>
       </div>
       <div class="header-actions">
@@ -870,14 +902,14 @@
       <section class="sidebar">
         <div class="panel">
           <div class="panel-header">
-            <h2>&#x80CC;&#x666F;&#x8BBE;&#x5B9A;</h2>
+            <h2>背景设定</h2>
             <span>System Prompt</span>
           </div>
           <div class="panel-body">
             <div class="form-grid">
-              <div id="systemPromptPreview" class="prompt-preview empty">&#x5C1A;&#x672A;&#x586B;&#x5199;&#x6E38;&#x620F;&#x80CC;&#x666F;&#x6216;&#x7FFB;&#x8BD1;&#x4E0A;&#x4E0B;&#x6587;&#x3002;&#x70B9;&#x51FB;&#x4E0B;&#x65B9;&#x6309;&#x94AE;&#x540E;&#xFF0C;&#x53EF;&#x5728;&#x4E8C;&#x7EA7;&#x7A97;&#x53E3;&#x4E2D;&#x96C6;&#x4E2D;&#x7F16;&#x8F91;&#x8BBE;&#x5B9A;&#x5185;&#x5BB9;&#x3002;</div>
+              <div id="systemPromptPreview" class="prompt-preview empty">尚未填写游戏背景或翻译上下文。点击下方按钮后，可在二级窗口中集中编辑设定内容。</div>
               <div class="prompt-actions">
-                <button id="editPromptBtn" class="ghost" type="button">&#x7F16;&#x8F91;&#x80CC;&#x666F;&#x8BBE;&#x5B9A;</button>
+                <button id="editPromptBtn" class="ghost" type="button">编辑背景设定</button>
                 <div id="promptMeta" class="file-meta">0 chars</div>
               </div>
             </div>
@@ -922,27 +954,27 @@
 
         <div class="panel sticky-action-panel">
           <div class="panel-header">
-            <h2>&#x64CD;&#x4F5C;&#x53F0;</h2>
+            <h2>🚀 执行引擎</h2>
             <span>Actions</span>
           </div>
           <div class="panel-body">
             <div class="form-grid">
               <div class="analysis-button-wrap">
-                <button id="analyzeContextBtn" class="analysis-btn" type="button">&#x1F50D; &#x5206;&#x6790;&#x5168;&#x6587;&#x80CC;&#x666F;</button>
-                <div class="subhint">&#x4F1A;&#x57FA;&#x4E8E;&#x201C;&#x57FA;&#x51C6;&#x8BED;&#x8A00;&#x201D;&#x5217;&#x904D;&#x5386;&#x5168;&#x6587;&#x5185;&#x5BB9;&#xFF0C;&#x76EE;&#x524D;&#x4EC5;&#x8FDB;&#x884C;&#x672C;&#x5730;&#x5360;&#x4F4D;&#x5206;&#x6790;&#x4E0E;&#x65E5;&#x5FD7;&#x53CD;&#x9988;&#x3002;</div>
+                <button id="analyzeContextBtn" class="analysis-btn" type="button">🔍 分析全文背景</button>
+                <div class="subhint">会基于“基准语言”列遍历全文内容，自动沉淀世界观、人物语气与本地化规则。</div>
               </div>
 
               <div class="controls">
-                <div class="radio-group" role="radiogroup" aria-label="&#x7FFB;&#x8BD1;&#x6A21;&#x5F0F;">
-                  <label class="radio-card"><input type="radio" name="mode" value="translate-empty" checked><span>&#x4EC5;&#x7FFB;&#x8BD1;&#x7A7A;&#x767D;</span></label>
-                  <label class="radio-card"><input type="radio" name="mode" value="force-overwrite"><span>&#x5F3A;&#x5236;&#x8986;&#x5199;</span></label>
+                <div class="radio-group" role="radiogroup" aria-label="翻译模式">
+                  <label class="radio-card"><input type="radio" name="mode" value="translate-empty" checked><span>仅翻译空白</span></label>
+                  <label class="radio-card"><input type="radio" name="mode" value="force-overwrite"><span>强制覆写</span></label>
                 </div>
                 <div class="button-group">
-                  <button id="translateBtn" class="primary" type="button">&#x5F00;&#x59CB;&#x7FFB;&#x8BD1;</button>
+                  <button id="translateBtn" class="primary" type="button">开始翻译</button>
                   <button id="stopTranslateBtn" class="stop-btn hidden" type="button">🛑 停止翻译</button>
-                  <button id="proofreadBtn" class="secondary" type="button">&#x5F00;&#x59CB;&#x6821;&#x5BF9;</button>
+                  <button id="proofreadBtn" class="secondary" type="button">开始校对</button>
                   <button id="commitBtn" class="commit-btn hidden" type="button">💾 审阅并保存</button>
-                  <button id="exportBtn" class="ghost" type="button">&#x5BFC;&#x51FA; CSV</button>
+                  <button id="exportBtn" class="ghost" type="button">导出 CSV</button>
                 </div>
               </div>
             </div>
@@ -954,7 +986,7 @@
         <div class="preview-layout">
           <div class="panel table-panel">
             <div class="panel-header">
-              <h2>区域 A · CSV 预览</h2>
+              <h2>📊 数据工作区 (Workspace)</h2>
               <div class="stats-strip">
                 <span id="rowCountChip" class="stat-chip">Rows: 0</span>
                 <span id="columnCountChip" class="stat-chip">Columns: 0</span>
@@ -972,8 +1004,11 @@
 
           <div class="panel log-panel">
             <div class="panel-header">
-              <h2>区域 B · 日志与反馈</h2>
-              <span>AI Notes / Runtime Log</span>
+              <h2>📟 运行终端 (Terminal)</h2>
+              <div class="terminal-tools">
+                <span>AI Notes / Runtime Log</span>
+                <button id="clearLogBtn" class="log-clear-btn" type="button" title="清空运行终端">🗑️</button>
+              </div>
             </div>
             <div id="logView" class="log-view"></div>
           </div>
@@ -986,20 +1021,20 @@
     <div class="modal-card prompt-modal-card" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle">
       <div class="modal-header">
         <div>
-          <h2 id="promptModalTitle" class="modal-title">&#x80CC;&#x666F;&#x8BBE;&#x5B9A;</h2>
-          <div class="modal-subtitle">&#x5728;&#x8FD9;&#x91CC;&#x96C6;&#x4E2D;&#x7EF4;&#x62A4;&#x4E16;&#x754C;&#x89C2;&#x3001;&#x89D2;&#x8272;&#x8BED;&#x6C14;&#x3001;&#x672F;&#x8BED;&#x7EA6;&#x675F;&#x4E0E;&#x7FFB;&#x8BD1;&#x4E0A;&#x4E0B;&#x6587;&#x3002;&#x5206;&#x6790;&#x5168;&#x6587;&#x540E;&#x751F;&#x6210;&#x7684;&#x6458;&#x8981;&#x4E5F;&#x4F1A;&#x5199;&#x5165;&#x8FD9;&#x91CC;&#x3002;</div>
+          <h2 id="promptModalTitle" class="modal-title">背景设定</h2>
+          <div class="modal-subtitle">在这里集中维护世界观、角色语气、术语约束与翻译上下文。分析全文后生成的摘要也会写入这里。</div>
         </div>
       </div>
       <div class="modal-body">
         <div class="field-group">
-          <label for="systemPrompt">&#x6E38;&#x620F;&#x80CC;&#x666F; / &#x7FFB;&#x8BD1;&#x4E0A;&#x4E0B;&#x6587;</label>
-          <textarea id="systemPrompt" placeholder="&#x4F8B;&#x5982;&#xFF1A;&#x8FD9;&#x662F;&#x4E00;&#x6B3E;&#x8D5B;&#x535A;&#x670B;&#x514B;&#x9898;&#x6750;&#x7684;&#x5267;&#x60C5;&#x5411; RPG&#xFF0C;&#x89D2;&#x8272;&#x8BED;&#x8A00;&#x98CE;&#x683C;&#x9700;&#x8981;&#x4FDD;&#x7559;&#x4E2A;&#x6027;&#xFF0C;UI &#x6587;&#x6848;&#x5C3D;&#x91CF;&#x7B80;&#x6D01;&#xFF0C;&#x4E13;&#x6709;&#x540D;&#x8BCD;&#x4FDD;&#x6301;&#x4E00;&#x81F4;&#x3002;"></textarea>
-          <div class="hint">&#x5F53;&#x524D;&#x9636;&#x6BB5;&#x4EC5;&#x4FDD;&#x7559;&#x8F93;&#x5165;&#x5185;&#x5BB9;&#x4E0E;&#x672C;&#x5730;&#x5206;&#x6790;&#x5360;&#x4F4D;&#x903B;&#x8F91;&#xFF0C;&#x4E0D;&#x6267;&#x884C;&#x771F;&#x5B9E;&#x7FFB;&#x8BD1;&#x8BF7;&#x6C42;&#x3002;</div>
+          <label for="systemPrompt">游戏背景 / 翻译上下文</label>
+          <textarea id="systemPrompt" placeholder="例如：这是一款悬疑解谜导向的剧情游戏，角色说话需要保留个性与潜台词，UI 文案保持简洁，专有名词必须统一。"></textarea>
+          <div class="hint">这里会作为翻译与 LQA 的统一上下文底稿，建议长期维护并持续迭代。</div>
         </div>
       </div>
       <div class="modal-footer">
-        <button id="promptCancelBtn" class="ghost" type="button">&#x53D6;&#x6D88;</button>
-        <button id="promptSaveBtn" class="primary" type="button">&#x4FDD;&#x5B58;&#x5E76;&#x5173;&#x95ED;</button>
+        <button id="promptCancelBtn" class="ghost" type="button">取消</button>
+        <button id="promptSaveBtn" class="primary" type="button">保存并关闭</button>
       </div>
     </div>
   </div>
@@ -1009,7 +1044,7 @@
       <div class="modal-header">
         <div>
           <h2 id="settingsTitle" class="modal-title">偏好设置</h2>
-          <div class="modal-subtitle">本地保存 API 与映射配置，当前阶段不会发起真实翻译请求。</div>
+          <div class="modal-subtitle">本地保存 API 连接与执行参数，供翻译、LQA 与全文分析统一复用。</div>
         </div>
       </div>
       <div class="modal-body">
@@ -1047,9 +1082,9 @@
         </div>
 
         <div class="field-group">
-          <label for="settingsTypeMapping">Type Mapping (Desc 列映射规则)</label>
-          <textarea id="settingsTypeMapping" placeholder="例如：Comment=角色对话，请口语化；Tip=系统提示，客观简练。"></textarea>
-          <div class="hint">例如填写：Comment=角色对话，请口语化；Tip=系统提示，客观简练。翻译时会根据 Desc 列自动匹配对应语气。</div>
+          <label for="settingsDescColumnName">Desc 列字段名</label>
+          <input id="settingsDescColumnName" type="text" value="Desc" placeholder="例如：Desc">
+          <div class="hint">用于指定哪一列作为语气与上下文参考来源，默认会使用 <code>Desc</code>。</div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1058,7 +1093,7 @@
       </div>
     </div>
   </div>
-  <div id="commitModal" class="modal-backdrop" aria-hidden="true">
+  <div id="commitModal" class="modal-backdrop" aria-hidden="true" data-modal="commit-review">
     <div class="modal-card commit-modal-card" role="dialog" aria-modal="true" aria-labelledby="commitModalTitle">
       <div class="modal-header">
         <div>
@@ -1068,7 +1103,7 @@
         <button id="commitCloseBtn" class="commit-close-btn" type="button" aria-label="关闭审阅弹窗" title="关闭">&times;</button>
       </div>
       <div class="modal-body">
-        <div id="commitSummaryContent" class="commit-summary-list"></div>
+        <div id="commitSummaryContent" class="commit-summary-list" aria-live="polite"></div>
       </div>
       <div class="modal-footer">
         <button id="commitCancelBtn" class="ghost" type="button">取消</button>
@@ -1081,7 +1116,7 @@
       apiKey: "translatorTool.apiKey",
       baseUrl: "translatorTool.baseUrl",
       modelName: "translatorTool.modelName",
-      typeMapping: "translatorTool.typeMapping",
+      descColumnName: "translatorTool.descColumnName",
       concurrency: "translatorTool.concurrency"
     };
 
@@ -1092,7 +1127,7 @@
     let apiKey = "";
     let baseUrl = "https://api.openai.com/v1";
     let modelName = "GPT-5.4";
-    let typeMapping = "";
+    let descColumnName = "Desc";
     let settingsConcurrency = 3;
     let selectedBaseLanguage = "";
     let selectedTargetLanguages = [];
@@ -1114,6 +1149,7 @@
     const fileMeta = document.getElementById("fileMeta");
     const tableWrap = document.getElementById("tableWrap");
     const logView = document.getElementById("logView");
+    const clearLogBtn = document.getElementById("clearLogBtn");
     const rowCountChip = document.getElementById("rowCountChip");
     const columnCountChip = document.getElementById("columnCountChip");
     const exportBtn = document.getElementById("exportBtn");
@@ -1139,7 +1175,7 @@
     const settingsConcurrencyInput = document.getElementById("settingsConcurrency");
     const settingsModelName = document.getElementById("settingsModelName");
     const modelOptions = document.getElementById("modelOptions");
-    const settingsTypeMapping = document.getElementById("settingsTypeMapping");
+    const settingsDescColumnName = document.getElementById("settingsDescColumnName");
     const settingsCancelBtn = document.getElementById("settingsCancelBtn");
     const settingsSaveBtn = document.getElementById("settingsSaveBtn");
     const toggleApiKeyVisibilityBtn = document.getElementById("toggleApiKeyVisibilityBtn");
@@ -1177,6 +1213,11 @@
 
     function escapeTitleText(value) {
       return escapeHtml(String(value ?? "")).replace(/\r?\n/g, "&#10;");
+    }
+
+    function findDescColumnName(headers = csvHeaders) {
+      const normalizedExpected = String(descColumnName ?? "Desc").trim().toLowerCase();
+      return headers.find((header) => String(header ?? "").trim().toLowerCase() === normalizedExpected) || "";
     }
 
     function buildLqaLogHtml(row, lang, note) {
@@ -1227,7 +1268,7 @@
     function buildCommitSummaryHtml() {
       const items = [];
       const keyColumn = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "key") || "";
-      const descColumn = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "desc") || "";
+      const descColumn = findDescColumnName(csvHeaders);
 
       csvData.forEach((row, rowIndex) => {
         const historyMap = row?._lqaHistory;
@@ -1426,7 +1467,7 @@
     }
 
     function buildAnalysisTextRows(baseLanguage) {
-      const descColumnName = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "desc") || "";
+      const currentDescColumnName = findDescColumnName(csvHeaders);
       const availableRows = [];
 
       csvData.forEach((row) => {
@@ -1435,15 +1476,15 @@
           return;
         }
 
-        const descText = descColumnName
-          ? String(row?.[descColumnName] ?? "").replace(/\s+/g, " ").trim()
+        const descText = currentDescColumnName
+          ? String(row?.[currentDescColumnName] ?? "").replace(/\s+/g, " ").trim()
           : "";
 
         availableRows.push(`[Desc: ${descText}] ${baseText}`);
       });
 
       return {
-        descColumnName,
+        descColumnName: currentDescColumnName,
         totalRows: availableRows.length,
         wasTruncated: availableRows.length > ANALYSIS_MAX_ROWS,
         rows: availableRows.slice(0, ANALYSIS_MAX_ROWS)
@@ -1478,7 +1519,7 @@
     }
 
     function buildTranslationJobs(targetLangs, mode) {
-      const descColumnName = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "desc") || "";
+      const currentDescColumnName = findDescColumnName(csvHeaders);
       const jobs = [];
 
       csvData.forEach((row, index) => {
@@ -1497,7 +1538,7 @@
 
         jobs.push({
           row: index,
-          desc: descColumnName ? String(row?.[descColumnName] ?? "") : "",
+          desc: currentDescColumnName ? String(row?.[currentDescColumnName] ?? "") : "",
           text: baseText,
           translateTo: rowMissingLangs
         });
@@ -1507,7 +1548,7 @@
     }
 
     function buildProofreadJobs(targetLangs) {
-      const descColumnName = csvHeaders.find((header) => String(header ?? "").trim().toLowerCase() === "desc") || "";
+      const currentDescColumnName = findDescColumnName(csvHeaders);
       const jobs = [];
 
       csvData.forEach((row, index) => {
@@ -1530,7 +1571,7 @@
 
         jobs.push({
           row: index,
-          desc: descColumnName ? String(row?.[descColumnName] ?? "") : "",
+          desc: currentDescColumnName ? String(row?.[currentDescColumnName] ?? "") : "",
           baseText,
           currentTranslations
         });
@@ -1919,7 +1960,7 @@
       apiKey = getStoredValue(STORAGE_KEYS.apiKey, "");
       baseUrl = getStoredValue(STORAGE_KEYS.baseUrl, "https://api.openai.com/v1");
       modelName = getStoredValue(STORAGE_KEYS.modelName, "GPT-5.4");
-      typeMapping = getStoredValue(STORAGE_KEYS.typeMapping, "");
+      descColumnName = getStoredValue(STORAGE_KEYS.descColumnName, "Desc").trim() || "Desc";
       settingsConcurrency = normalizeConcurrency(getStoredValue(STORAGE_KEYS.concurrency, "3"));
     }
 
@@ -1928,7 +1969,7 @@
       settingsBaseUrl.value = baseUrl;
       settingsConcurrencyInput.value = settingsConcurrency;
       settingsModelName.value = modelName;
-      settingsTypeMapping.value = typeMapping;
+      settingsDescColumnName.value = descColumnName;
       settingsModelName.placeholder = "请选择或输入模型";
       renderModelOptions([modelName, "GPT-5.4"]);
       updateApiKeyVisibility(false);
@@ -1952,7 +1993,8 @@
       apiKey = settingsApiKey.value.trim();
       baseUrl = normalizeBaseUrl(settingsBaseUrl.value) || "https://api.openai.com/v1";
       modelName = settingsModelName.value.trim() || "GPT-5.4";
-      typeMapping = settingsTypeMapping.value.trim();
+      descColumnName = settingsDescColumnName.value.trim() || "Desc";
+      settingsDescColumnName.value = descColumnName;
       settingsConcurrency = normalizeConcurrency(settingsConcurrencyInput.value);
       settingsConcurrencyInput.value = settingsConcurrency;
 
@@ -1960,7 +2002,7 @@
         localStorage.setItem(STORAGE_KEYS.apiKey, apiKey);
         localStorage.setItem(STORAGE_KEYS.baseUrl, baseUrl);
         localStorage.setItem(STORAGE_KEYS.modelName, modelName);
-        localStorage.setItem(STORAGE_KEYS.typeMapping, typeMapping);
+        localStorage.setItem(STORAGE_KEYS.descColumnName, descColumnName);
         localStorage.setItem(STORAGE_KEYS.concurrency, String(settingsConcurrency));
         addLog("偏好设置已保存到 localStorage。", "success");
       } catch (error) {
@@ -2898,6 +2940,9 @@
       closePromptModal();
     });
     systemPrompt.addEventListener("input", updatePromptPreview);
+    clearLogBtn.addEventListener("click", () => {
+      logView.innerHTML = "";
+    });
 
     settingsBtn.addEventListener("click", openSettingsModal);
     toggleApiKeyVisibilityBtn.addEventListener("click", () => {
