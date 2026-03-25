@@ -6,27 +6,27 @@
   <title>Game CSV Translator Tool</title>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <style>
-    :root {
+   :root {
       color-scheme: dark;
-      --bg: #121212;
-      --panel: rgba(24, 24, 27, 0.96);
-      --panel-strong: rgba(18, 18, 21, 0.99);
-      --border: rgba(255, 255, 255, 0.08);
-      --text: #e6edf3;
-      --muted: #8b98ab;
-      --accent: #4fc3f7;
-      --accent-strong: #2196f3;
-      --success: #4dd0a8;
-      --warning: #ffb86b;
-      --danger: #ff7b72;
-      --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
-      --radius: 18px;
-      --gap: 14px;
-      --shell-padding: 20px;
-      --header-height: 86px;
-      --panel-pad: 14px;
-      --font-ui: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-      --font-mono: "Cascadia Code", "Consolas", monospace;
+      --bg: #0D1117;          /* 极简深渊灰背景 */
+      --panel: #161B22;       /* 面板主色 */
+      --panel-strong: #21262D;/* 面板高亮色 */
+      --border: #30363D;      /* 清晰锐利的边框 */
+      --text: #E6EDF3;
+      --muted: #8B949E;
+      --accent: #2F81F7;
+      --accent-strong: #388BFD;
+      --success: #3FB950;
+      --warning: #D29922;
+      --danger: #F85149;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      --radius: 12px;         /* 收敛圆角，更显专业 */
+      --gap: 16px;
+      --shell-padding: 16px;
+      --header-height: 72px;
+      --panel-pad: 16px;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
     }
 
     * { box-sizing: border-box; }
@@ -41,22 +41,33 @@
       margin: 0;
       font-family: var(--font-ui);
       color: var(--text);
-      background:
-      radial-gradient(circle at top left, rgba(33, 150, 243, 0.14), transparent 26%),
-      radial-gradient(circle at top right, rgba(79, 195, 247, 0.08), transparent 20%),
-      linear-gradient(180deg, #101114 0%, #121212 42%, #0d0d0f 100%);
+      background: var(--bg); /* 纯净深色，彻底去掉花里胡哨的渐变 */
     }
 
+    /* 移除影响视觉的背景网格 */
     body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-      background-size: 30px 30px;
-      pointer-events: none;
-      opacity: 0.18;
+      display: none;
+    }
+
+    body.modal-open { overflow: hidden; }
+    
+    .app-shell {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: var(--gap);
+      height: 100vh;
+      min-height: 0;
+      padding: var(--shell-padding);
+      overflow: hidden;
+    }
+
+    /* 移除毛玻璃，使用纯净的色块和锐利的边框 */
+    .topbar, .panel, .modal-card {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      box-shadow: var(--shadow);
     }
 
     body.modal-open { overflow: hidden; }
