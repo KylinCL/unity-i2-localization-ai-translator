@@ -3208,7 +3208,8 @@
         return;
       }
 
-      const logEntry = document.getElementById(buildLogElementId(rowIndex, lang));
+      const matchingLogs = document.querySelectorAll("[id='" + buildLogElementId(rowIndex, lang) + "']");
+      const logEntry = matchingLogs.length > 0 ? matchingLogs[matchingLogs.length - 1] : null;
       if (!logEntry) {
         return;
       }
