@@ -1157,6 +1157,7 @@
         <div id="commitSummaryContent" class="commit-summary-list" aria-live="polite"></div>
       </div>
       <div class="modal-footer">
+        <button id="commitRevertAllBtn" class="stop-btn" type="button" style="margin-right: auto;">🗑️ 放弃全部修改</button>
         <button id="commitCancelBtn" class="ghost" type="button">取消</button>
         <button id="commitConfirmBtn" class="primary" type="button">确认保存</button>
       </div>
@@ -1233,6 +1234,7 @@
     const refreshModelsBtn = document.getElementById("refreshModelsBtn");
     const commitModal = document.getElementById("commitModal");
     const commitSummaryContent = document.getElementById("commitSummaryContent");
+    const commitRevertAllBtn = document.getElementById("commitRevertAllBtn");
     const commitCancelBtn = document.getElementById("commitCancelBtn");
     const commitConfirmBtn = document.getElementById("commitConfirmBtn");
     const commitCloseBtn = document.getElementById("commitCloseBtn");
@@ -1465,6 +1467,32 @@
       updateStats(csvHeaders, csvData);
       syncPendingLqaState();
       addLog("✅ 已保存并合并所有 LQA 修改。历史记录已清理。", "success");
+    }
+
+    function discardAllLqaChanges() {
+      if (!confirm("确定要放弃本轮所有的 LQA 修改吗？此操作将把所有标黄单元格恢复原样，且不可恢复。")) {
+        return;
+      }
+
+      csvData.forEach((row) => {
+        if (!row || !row._lqaHistory) {
+          return;
+        }
+
+        Object.entries(row._lqaHistory).forEach(([lang, history]) => {
+          row[lang] = history?.originalText ?? "";
+        });
+
+        delete row._lqaHistory;
+      });
+
+      setPendingLqaState(false);
+      closeCommitModal();
+      window.csvData = csvData;
+      renderTable(csvHeaders, csvData);
+      updateStats(csvHeaders, csvData);
+      syncPendingLqaState();
+      addLog("🗑️ 用户已手动放弃本轮所有 LQA 修改，数据已恢复至校对前状态。", "warning");
     }
 
     function updateTokenLabel() {
@@ -3097,6 +3125,7 @@
 
     proofreadBtn.addEventListener("click", startProofreadRequest);
     commitBtn.addEventListener("click", openCommitModal);
+    commitRevertAllBtn.addEventListener("click", discardAllLqaChanges);
     commitCancelBtn.addEventListener("click", closeCommitModal);
     commitConfirmBtn.addEventListener("click", commitPendingLqaChanges);
     commitCloseBtn.addEventListener("click", closeCommitModal);
