@@ -616,6 +616,46 @@
       background: rgba(200, 208, 222, 0.08);
       box-shadow: inset 3px 0 0 rgba(160, 171, 189, 0.35);
     }
+    @keyframes flash-target {
+      0% {
+        outline: 2px solid rgba(79, 195, 247, 0.95);
+        outline-offset: -2px;
+        box-shadow: inset 0 0 0 2px rgba(79, 195, 247, 0.95), 0 0 26px rgba(79, 195, 247, 0.82) !important;
+        filter: brightness(1.12);
+        background-color: rgba(79, 195, 247, 0.22) !important;
+      }
+      18% {
+        outline: 2px solid rgba(79, 195, 247, 0.88);
+        outline-offset: -2px;
+        box-shadow: inset 0 0 0 2px rgba(79, 195, 247, 0.88), 0 0 22px rgba(79, 195, 247, 0.68) !important;
+        filter: brightness(1.08);
+        background-color: rgba(79, 195, 247, 0.16) !important;
+      }
+      52% {
+        outline: 1px solid rgba(79, 195, 247, 0.5);
+        outline-offset: -1px;
+        box-shadow: inset 0 0 0 1px rgba(79, 195, 247, 0.65), 0 0 14px rgba(79, 195, 247, 0.36) !important;
+        filter: brightness(1.03);
+        background-color: rgba(79, 195, 247, 0.06) !important;
+      }
+      100% {
+        outline: 1px solid transparent;
+        outline-offset: 0;
+        box-shadow: inset 0 0 0 0 transparent, 0 0 0 transparent !important;
+        filter: brightness(1);
+        background-color: transparent !important;
+      }
+    }
+    .flash-target {
+      animation: flash-target 2.8s ease-out forwards !important;
+      position: relative;
+      z-index: 99 !important;
+      will-change: background-color, box-shadow, filter, outline;
+    }
+    td.lqa-updated-cell,
+    td.lqa-original-cell {
+      cursor: pointer;
+    }
     .cell-text { white-space: pre-wrap; }
     .lqa-toggle-btn {
       display: inline-flex;
@@ -1208,9 +1248,12 @@
     }
 
     function addLog(message, type = "info", options = {}) {
-      const { html = false, className = "" } = options;
+      const { html = false, className = "", id = "" } = options;
       const entry = document.createElement("div");
       entry.className = "log-entry " + type + (className ? " " + className : "");
+      if (id) {
+        entry.id = id;
+      }
       const timestamp = "[" + new Date().toLocaleTimeString() + "]";
       if (html) {
         entry.innerHTML = "<span class=\"log-time\">" + escapeHtml(timestamp) + "</span> " + message;
@@ -1226,6 +1269,77 @@
       return escapeHtml(String(value ?? "")).replace(/\r?\n/g, "&#10;");
     }
 
+    function buildCellElementId(row, lang) {
+      return "cell-" + row + "-" + String(lang ?? "");
+    }
+
+    function buildLogElementId(row, lang) {
+      return "log-" + row + "-" + String(lang ?? "");
+    }
+
+    function flashTargetElement(element) {
+      if (!element) {
+        return;
+      }
+      element.classList.remove("flash-target");
+      void element.offsetWidth;
+      element.classList.add("flash-target");
+    }
+
+    function getScrollFocusDistance(scroller, target) {
+      if (!scroller || !target) {
+        return 0;
+      }
+      const scrollerRect = scroller.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const scrollerCenter = scrollerRect.top + (scrollerRect.height / 2);
+      const targetCenter = targetRect.top + (targetRect.height / 2);
+      return Math.abs(targetCenter - scrollerCenter);
+    }
+
+    function flashAfterSmartScroll(scroller, scrollTarget, flashTarget) {
+      if (!scrollTarget || !flashTarget) {
+        return;
+      }
+
+      const effectiveScroller = scroller || scrollTarget.parentElement;
+      const distance = getScrollFocusDistance(effectiveScroller, scrollTarget);
+      const immediateThreshold = effectiveScroller
+        ? Math.max(80, effectiveScroller.clientHeight * 0.16)
+        : 80;
+
+      scrollTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+
+      if (!effectiveScroller || distance <= immediateThreshold) {
+        flashTargetElement(flashTarget);
+        return;
+      }
+
+      let settledFrames = 0;
+      let lastScrollTop = effectiveScroller.scrollTop;
+      const startTime = performance.now();
+      const maxWaitMs = 1800;
+
+      const checkSettled = (now) => {
+        const currentScrollTop = effectiveScroller.scrollTop;
+        if (Math.abs(currentScrollTop - lastScrollTop) < 1) {
+          settledFrames += 1;
+        } else {
+          settledFrames = 0;
+          lastScrollTop = currentScrollTop;
+        }
+
+        if (settledFrames >= 4 || (now - startTime) >= maxWaitMs) {
+          flashTargetElement(flashTarget);
+          return;
+        }
+
+        window.requestAnimationFrame(checkSettled);
+      };
+
+      window.requestAnimationFrame(checkSettled);
+    }
+
     function findDescColumnName(headers = csvHeaders) {
       const normalizedExpected = String(descColumnName ?? "Desc").trim().toLowerCase();
       return headers.find((header) => String(header ?? "").trim().toLowerCase() === normalizedExpected) || "";
@@ -1233,8 +1347,9 @@
 
     function buildLqaLogHtml(row, lang, note) {
       const rowId = "table-row-" + row;
+      const safeLang = String(lang ?? "");
       return "<span style=\"color: #FFA500;\">🛠️ </span>"
-        + "<a href=\"#" + escapeHtml(rowId) + "\" class=\"table-row-link\" data-target-row=\"" + escapeHtml(rowId) + "\">行 [" + (row + 1) + "]</a> "
+        + "<a href=\"#" + escapeHtml(rowId) + "\" class=\"table-row-link\" data-target-row=\"" + escapeHtml(rowId) + "\" data-row=\"" + row + "\" data-lang=\"" + escapeHtml(safeLang) + "\">行 [" + (row + 1) + "]</a> "
         + "<span class=\"lqa-lang\">[" + escapeHtml(lang) + "]</span> "
         + "LQA 修正：" + escapeHtml(note);
     }
@@ -1910,6 +2025,7 @@
         const cells = headers.map((header) => {
           const lqaHistory = row?._lqaHistory?.[header];
           const currentStatus = lqaHistory?.status === "original" ? "original" : "ai";
+          const cellId = lqaHistory ? buildCellElementId(index, header) : "";
           const displayText = lqaHistory
             ? (currentStatus === "ai" ? String(lqaHistory.aiText ?? row[header] ?? "") : String(lqaHistory.originalText ?? row[header] ?? ""))
             : String(row[header] ?? "");
@@ -1922,6 +2038,9 @@
             ? ' class="' + (currentStatus === "ai" ? "lqa-updated-cell" : "lqa-original-cell") + '"'
             : "";
           const titleAttr = lqaHistory ? ' title="' + escapeTitleText(titleText) + '"' : "";
+          const interactiveAttrs = lqaHistory
+            ? ' id="' + escapeHtml(cellId) + '" data-row="' + index + '" data-lang="' + escapeHtml(header) + '"'
+            : "";
           const toggleControl = lqaHistory
             ? ' <span class="lqa-toggle-btn" data-row="' + index + '" data-lang="' + escapeHtml(header) + '" title="'
               + escapeTitleText(titleText)
@@ -1930,7 +2049,7 @@
               + "</span>"
             : "";
 
-          return "<td" + cellClass + titleAttr + "><span class=\"cell-text\">"
+          return "<td" + cellClass + titleAttr + interactiveAttrs + "><span class=\"cell-text\">"
             + escapeHtml(displayText)
             + "</span>"
             + toggleControl
@@ -2848,7 +2967,8 @@
             applyResult.notes.forEach(({ row, lang, note }) => {
               addLog(buildLqaLogHtml(row, lang, note || "已根据 LQA 规则完成修正。"), "info", {
                 html: true,
-                className: "lqa"
+                className: "lqa",
+                id: buildLogElementId(row, lang)
               });
             });
 
@@ -3015,34 +3135,51 @@
 
     tableWrap.addEventListener("click", (event) => {
       const toggleBtn = event.target.closest(".lqa-toggle-btn");
-      if (!toggleBtn) {
+      if (toggleBtn) {
+        event.preventDefault();
+        const rowIndex = Number(toggleBtn.dataset.row);
+        const lang = toggleBtn.dataset.lang;
+        if (!Number.isInteger(rowIndex) || rowIndex < 0 || !lang) {
+          return;
+        }
+
+        const rowData = csvData[rowIndex];
+        const history = rowData?._lqaHistory?.[lang];
+        if (!rowData || !history) {
+          return;
+        }
+
+        if (history.status === "original") {
+          history.status = "ai";
+          rowData[lang] = history.aiText ?? "";
+        } else {
+          history.status = "original";
+          rowData[lang] = history.originalText ?? "";
+        }
+
+        window.csvData = csvData;
+        renderTable(csvHeaders, csvData);
+        updateStats(csvHeaders, csvData);
         return;
       }
 
-      event.preventDefault();
-      const rowIndex = Number(toggleBtn.dataset.row);
-      const lang = toggleBtn.dataset.lang;
-      if (!Number.isInteger(rowIndex) || rowIndex < 0 || !lang) {
+      const targetCell = event.target.closest("td");
+      if (!targetCell || !tableWrap.contains(targetCell)) {
         return;
       }
 
-      const rowData = csvData[rowIndex];
-      const history = rowData?._lqaHistory?.[lang];
-      if (!rowData || !history) {
+      const rowIndex = targetCell.dataset.row;
+      const lang = targetCell.dataset.lang;
+      if (!rowIndex || !lang) {
         return;
       }
 
-      if (history.status === "original") {
-        history.status = "ai";
-        rowData[lang] = history.aiText ?? "";
-      } else {
-        history.status = "original";
-        rowData[lang] = history.originalText ?? "";
+      const logEntry = document.getElementById(buildLogElementId(rowIndex, lang));
+      if (!logEntry) {
+        return;
       }
 
-      window.csvData = csvData;
-      renderTable(csvHeaders, csvData);
-      updateStats(csvHeaders, csvData);
+      flashAfterSmartScroll(logView, logEntry, logEntry);
     });
 
     logView.addEventListener("click", (event) => {
@@ -3058,9 +3195,14 @@
       }
 
       const targetRow = document.getElementById(targetId);
-      if (targetRow) {
-        targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
+      const rowIndex = rowLink.dataset.row;
+      const lang = rowLink.dataset.lang;
+      if (!rowIndex || !lang) {
+        return;
       }
+
+      const targetCell = document.getElementById(buildCellElementId(rowIndex, lang));
+      flashAfterSmartScroll(tableWrap, targetRow, targetCell);
     });
 
     exportBtn.addEventListener("click", exportCsvFile);
