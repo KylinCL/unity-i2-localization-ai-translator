@@ -577,6 +577,9 @@
       border: 1px solid #333;
       box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
     }
+    .log-panel {
+      position: relative;
+    }
     .table-wrap {
       overflow: auto;
       overscroll-behavior: contain;
@@ -586,6 +589,38 @@
       overflow-y: auto;
       overflow-x: hidden;
       overscroll-behavior: contain;
+    }
+    .log-scroll-tip {
+      position: absolute;
+      right: 16px;
+      bottom: 18px;
+      z-index: 14;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(18, 24, 35, 0.82);
+      color: #eef6ff;
+      font-size: 0.82rem;
+      font-weight: 600;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+      transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+      animation: log-tip-float 1.2s ease-in-out infinite alternate;
+    }
+    .log-scroll-tip.is-visible {
+      display: inline-flex;
+    }
+    .log-scroll-tip:hover {
+      background: rgba(35, 47, 69, 0.92);
+      border-color: rgba(79, 195, 247, 0.35);
+      transform: translateY(-1px);
+    }
+    @keyframes log-tip-float {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(-2px); }
     }
     table { width: 100%; border-collapse: collapse; min-width: 720px; }
     thead th {
@@ -1090,6 +1125,7 @@
               </div>
             </div>
             <div id="logView" class="log-view"></div>
+            <button id="logScrollTip" class="log-scroll-tip" type="button">有新日志 ⬇️</button>
           </div>
         </div>
       </section>
@@ -1234,6 +1270,7 @@
     const fileMeta = document.getElementById("fileMeta");
     const tableWrap = document.getElementById("tableWrap");
     const logView = document.getElementById("logView");
+    const logScrollTip = document.getElementById("logScrollTip");
     const clearLogBtn = document.getElementById("clearLogBtn");
     const rowCountChip = document.getElementById("rowCountChip");
     const columnCountChip = document.getElementById("columnCountChip");
@@ -1284,8 +1321,26 @@
         .replace(/'/g, "&#39;");
     }
 
+    function isLogViewAtBottom() {
+      return (logView.scrollHeight - logView.scrollTop - logView.clientHeight) < 50;
+    }
+
+    function showLogScrollTip() {
+      logScrollTip.classList.add("is-visible");
+    }
+
+    function hideLogScrollTip() {
+      logScrollTip.classList.remove("is-visible");
+    }
+
+    function scrollLogViewToBottom() {
+      logView.scrollTop = logView.scrollHeight;
+      hideLogScrollTip();
+    }
+
     function addLog(message, type = "info", options = {}) {
       const { html = false, className = "", id = "" } = options;
+      const isAtBottom = isLogViewAtBottom();
       const entry = document.createElement("div");
       entry.className = "log-entry " + type + (className ? " " + className : "");
       if (id) {
@@ -1298,7 +1353,11 @@
         entry.textContent = timestamp + " " + message;
       }
       logView.appendChild(entry);
-      logView.scrollTop = logView.scrollHeight;
+      if (isAtBottom) {
+        scrollLogViewToBottom();
+      } else {
+        showLogScrollTip();
+      }
       return entry;
     }
 
@@ -3435,6 +3494,15 @@
     systemPrompt.addEventListener("input", updatePromptPreview);
     clearLogBtn.addEventListener("click", () => {
       logView.innerHTML = "";
+      hideLogScrollTip();
+    });
+    logScrollTip.addEventListener("click", () => {
+      scrollLogViewToBottom();
+    });
+    logView.addEventListener("scroll", () => {
+      if (isLogViewAtBottom()) {
+        hideLogScrollTip();
+      }
     });
 
     settingsBtn.addEventListener("click", openSettingsModal);
