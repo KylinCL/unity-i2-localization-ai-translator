@@ -1048,6 +1048,7 @@
                   <label class="radio-card"><input type="radio" name="mode" value="force-overwrite"><span>强制覆写</span></label>
                 </div>
                 <div class="button-group">
+                  <button id="resumeTaskBtn" class="ghost hidden" type="button">⏯️ 继续未完成</button>
                   <button id="translateBtn" class="primary" type="button">开始翻译</button>
                   <button id="stopTranslateBtn" class="stop-btn hidden" type="button">🛑 停止翻译</button>
                   <button id="proofreadBtn" class="secondary" type="button">开始校对</button>
@@ -1214,6 +1215,8 @@
     let pendingRowSelectShift = false;
     let analysisTimer = null;
     let hasPendingLQA = false;
+    let lastTaskStatus = { type: null, totalBatches: 0, lastSuccessBatch: 0 };
+    let lastTaskSnapshot = null;
     const excludedLanguageColumns = new Set(["key", "type", "desc"]);
     const ANALYSIS_MAX_ROWS = 3000;
     const ANALYSIS_SYSTEM_PROMPT = "你是一个资深的游戏本地化专家和剧情分析师。";
@@ -1224,6 +1227,7 @@
     window.totalTokens = totalTokens;
     window.isTranslating = false;
     window.hasPendingLQA = false;
+    window.lastTaskStatus = { ...lastTaskStatus };
 
     const csvFileInput = document.getElementById("csvFileInput");
     const dropZone = document.getElementById("dropZone");
@@ -1236,6 +1240,7 @@
     const exportBtn = document.getElementById("exportBtn");
     const translateBtn = document.getElementById("translateBtn");
     const proofreadBtn = document.getElementById("proofreadBtn");
+    const resumeTaskBtn = document.getElementById("resumeTaskBtn");
     const commitBtn = document.getElementById("commitBtn");
     const stopTranslateBtn = document.getElementById("stopTranslateBtn");
     const tokenLabel = document.getElementById("tokenLabel");
@@ -1391,14 +1396,130 @@
       window.hasPendingLQA = hasPendingLQA;
     }
 
+    function updateLastTaskStatus(patch = {}) {
+      lastTaskStatus = {
+        type: patch.type !== undefined ? patch.type : lastTaskStatus.type,
+        totalBatches: patch.totalBatches !== undefined ? Math.max(0, Number(patch.totalBatches) || 0) : lastTaskStatus.totalBatches,
+        lastSuccessBatch: patch.lastSuccessBatch !== undefined ? Math.max(0, Number(patch.lastSuccessBatch) || 0) : lastTaskStatus.lastSuccessBatch
+      };
+      window.lastTaskStatus = { ...lastTaskStatus };
+    }
+
+    function clearLastTaskState() {
+      lastTaskSnapshot = null;
+      updateLastTaskStatus({
+        type: null,
+        totalBatches: 0,
+        lastSuccessBatch: 0
+      });
+    }
+
+    function refreshLastTaskStatusFromSnapshot() {
+      if (!lastTaskSnapshot || !Array.isArray(lastTaskSnapshot.batches) || !lastTaskSnapshot.batches.length) {
+        clearLastTaskState();
+        return;
+      }
+
+      const completedBatchNumbers = new Set(lastTaskSnapshot.completedBatchNumbers || []);
+      let contiguousCompleted = 0;
+      for (let batchNumber = 1; batchNumber <= lastTaskSnapshot.batches.length; batchNumber += 1) {
+        if (!completedBatchNumbers.has(batchNumber)) {
+          break;
+        }
+        contiguousCompleted = batchNumber;
+      }
+
+      updateLastTaskStatus({
+        type: lastTaskSnapshot.type,
+        totalBatches: lastTaskSnapshot.batches.length,
+        lastSuccessBatch: contiguousCompleted
+      });
+    }
+
+    function createTaskSnapshot(type, batches, settings) {
+      lastTaskSnapshot = {
+        type,
+        batches: Array.isArray(batches) ? batches.slice() : [],
+        settings: settings ? { ...settings } : {},
+        completedBatchNumbers: []
+      };
+      refreshLastTaskStatusFromSnapshot();
+    }
+
+    function markBatchCompleted(batchNumber) {
+      if (!lastTaskSnapshot) {
+        return;
+      }
+
+      if (!lastTaskSnapshot.completedBatchNumbers.includes(batchNumber)) {
+        lastTaskSnapshot.completedBatchNumbers.push(batchNumber);
+        lastTaskSnapshot.completedBatchNumbers.sort((a, b) => a - b);
+      }
+
+      refreshLastTaskStatusFromSnapshot();
+    }
+
+    function getPendingBatchItems() {
+      if (!lastTaskSnapshot || !Array.isArray(lastTaskSnapshot.batches) || !lastTaskSnapshot.batches.length) {
+        return [];
+      }
+
+      const completedBatchNumbers = new Set(lastTaskSnapshot.completedBatchNumbers || []);
+      return lastTaskSnapshot.batches
+        .map((batchData, index) => ({
+          batchNumber: index + 1,
+          batchData
+        }))
+        .filter(({ batchNumber }) => !completedBatchNumbers.has(batchNumber));
+    }
+
+    function getNextPendingBatchNumber() {
+      const pendingBatchItems = getPendingBatchItems();
+      return pendingBatchItems.length ? pendingBatchItems[0].batchNumber : 0;
+    }
+
+    function hasResumableTask() {
+      return !window.isTranslating
+        && Boolean(lastTaskStatus.type)
+        && lastTaskStatus.totalBatches > 0
+        && lastTaskStatus.lastSuccessBatch < lastTaskStatus.totalBatches
+        && Boolean(lastTaskSnapshot)
+        && getPendingBatchItems().length > 0;
+    }
+
+    function formatBatchDispatchLabel(batchItems) {
+      const batchNumbers = batchItems.map((item) => item.batchNumber);
+      if (!batchNumbers.length) {
+        return "";
+      }
+
+      if (batchNumbers.length === 1) {
+        return "第 " + batchNumbers[0] + " 批请求";
+      }
+
+      const isContiguous = batchNumbers.every((batchNumber, index) => index === 0 || batchNumber === batchNumbers[index - 1] + 1);
+      return isContiguous
+        ? "第 " + batchNumbers[0] + " 到 " + batchNumbers[batchNumbers.length - 1] + " 批请求"
+        : "未完成批次 " + batchNumbers.join(", ") + " 请求";
+    }
+
     function syncPendingLqaState() {
       window.hasPendingLQA = hasPendingLQA;
+      window.lastTaskStatus = { ...lastTaskStatus };
 
       if (window.isTranslating) {
         translateBtn.disabled = true;
         proofreadBtn.disabled = true;
         commitBtn.classList.add("hidden");
+        resumeTaskBtn.classList.add("hidden");
         return;
+      }
+
+      if (hasResumableTask()) {
+        resumeTaskBtn.classList.remove("hidden");
+        resumeTaskBtn.disabled = false;
+      } else {
+        resumeTaskBtn.classList.add("hidden");
       }
 
       if (hasPendingLQA) {
@@ -1606,6 +1727,7 @@
       translateBtn.disabled = true;
       proofreadBtn.disabled = true;
       commitBtn.classList.add("hidden");
+      resumeTaskBtn.classList.add("hidden");
       activeButton.textContent = busyLabel;
       showStopTranslateButton();
     }
@@ -1615,6 +1737,125 @@
       activeButton.textContent = originalLabel;
       hideStopTranslateButton();
       syncPendingLqaState();
+    }
+
+    async function executeTaskFromSnapshot(options) {
+      const {
+        type,
+        activeButton,
+        originalButtonLabel,
+        busyLabel,
+        taskLabel,
+        startInfoMessage,
+        groupStopMessage,
+        batchRunner,
+        applyResult,
+        handleNotes
+      } = options;
+
+      if (!lastTaskSnapshot || lastTaskSnapshot.type !== type) {
+        addLog("当前没有可继续的" + taskLabel + "任务。", "warning");
+        clearLastTaskState();
+        syncPendingLqaState();
+        return;
+      }
+
+      const pendingBatchItems = getPendingBatchItems();
+      if (!pendingBatchItems.length) {
+        clearLastTaskState();
+        syncPendingLqaState();
+        addLog("当前没有可继续的" + taskLabel + "批次。", "warning");
+        return;
+      }
+
+      beginQueueRun(activeButton, busyLabel);
+
+      try {
+        const totalBatches = lastTaskSnapshot.batches.length;
+        const concurrency = normalizeConcurrency(lastTaskSnapshot.settings?.concurrency);
+        const batchGroups = chunkArray(pendingBatchItems, concurrency);
+
+        if (startInfoMessage) {
+          addLog(startInfoMessage(totalBatches, concurrency, pendingBatchItems), "info");
+        }
+
+        let shouldStopAfterGroup = false;
+
+        for (let groupIndex = 0; groupIndex < batchGroups.length; groupIndex += 1) {
+          if (!window.isTranslating) {
+            break;
+          }
+
+          const batchGroup = batchGroups[groupIndex];
+          addLog("⏳ 正在向 AI 发送" + formatBatchDispatchLabel(batchGroup) + "...", "info");
+
+          const results = await Promise.all(
+            batchGroup.map(({ batchData, batchNumber }) => batchRunner(
+              batchData,
+              batchNumber,
+              totalBatches,
+              lastTaskSnapshot.settings
+            ))
+          );
+
+          let groupTokenSum = 0;
+          let groupFailed = false;
+
+          results.forEach((result) => {
+            if (!result.success) {
+              groupFailed = true;
+              addLog(
+                "第 " + result.batchNumber + "/" + result.totalBatches + " 批" + taskLabel + "失败：" + result.error.message,
+                "error"
+              );
+              return;
+            }
+
+            const applyPayload = applyResult(result.batchData, result.resultMap);
+            groupTokenSum += result.consumedTokens;
+            markBatchCompleted(result.batchNumber);
+            handleNotes(applyPayload, result);
+
+            addLog(
+              "第 " + result.batchNumber + "/" + result.totalBatches + " 批" + taskLabel + "完成，已更新 "
+                + applyPayload.rowsUpdated + " 行任务，"
+                + applyPayload.cellsUpdated + " 个单元格。本批消耗 Token: "
+                + result.consumedTokens,
+              "success"
+            );
+          });
+
+          renderTable(csvHeaders, csvData);
+          updateStats(csvHeaders, csvData);
+          totalTokens += groupTokenSum;
+          updateTokenLabel();
+
+          if (groupFailed) {
+            shouldStopAfterGroup = true;
+          }
+
+          if (!window.isTranslating) {
+            addLog(groupStopMessage, "warning");
+            break;
+          }
+
+          if (shouldStopAfterGroup) {
+            break;
+          }
+
+          if (groupIndex < batchGroups.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        }
+
+        if (lastTaskSnapshot && getPendingBatchItems().length === 0) {
+          clearLastTaskState();
+        }
+      } catch (error) {
+        addLog("批量" + taskLabel + "失败: " + error.message, "error");
+      } finally {
+        endQueueRun(activeButton, originalButtonLabel);
+      }
     }
 
     function getAnalysisSettings() {
@@ -1917,6 +2158,7 @@
     }
 
     async function runTranslationBatch(batchData, batchNumber, totalBatches, settings) {
+      const MAX_RETRIES = 3;
       const userPrompt = "请严格按照每个对象中 'translateTo' 数组指定的语种，对 'text' 进行翻译，并参考 'desc' 语气。\n"
         + "【重要规则】：绝对保留原文中的所有富文本标签（如 <color>）、占位符（如 {0}）以及换行符（\\n）。\n"
         + "【绝对禁止无意义的解释】：99% 的常规翻译【绝对不允许】输出 '_note' 字段！只有当你使用了极其特殊的本地化技巧、双关语或特殊意译时，才极度克制地输出 '_note' 简短说明。违背此规则将导致严重的解析错误！\n"
@@ -1926,60 +2168,69 @@
         + "待翻译数据如下：\n"
         + JSON.stringify(batchData);
 
-      try {
-        const response = await fetch(settings.baseUrl + "/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + settings.apiKey
-          },
-          body: JSON.stringify({
-            model: settings.modelName,
-            response_format: { type: "json_object" },
-            messages: [
-              { role: "system", content: settings.systemPrompt },
-              { role: "user", content: userPrompt }
-            ]
-          })
-        });
-
-        const responseText = await response.text();
-        let payload = {};
-
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
         try {
-          payload = responseText ? JSON.parse(responseText) : {};
-        } catch (parseError) {
-          throw new Error("服务端返回了无法解析的响应: " + responseText.slice(0, 200));
+          const response = await fetch(settings.baseUrl + "/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + settings.apiKey
+            },
+            body: JSON.stringify({
+              model: settings.modelName,
+              response_format: { type: "json_object" },
+              messages: [
+                { role: "system", content: settings.systemPrompt },
+                { role: "user", content: userPrompt }
+              ]
+            })
+          });
+
+          const responseText = await response.text();
+          let payload = {};
+
+          try {
+            payload = responseText ? JSON.parse(responseText) : {};
+          } catch (parseError) {
+            throw new Error("服务端返回了无法解析的响应: " + responseText.slice(0, 200));
+          }
+
+          if (!response.ok) {
+            const apiErrorMessage = payload?.error?.message || responseText.slice(0, 200) || (response.status + " " + response.statusText);
+            throw new Error("HTTP " + response.status + " " + response.statusText + " - " + apiErrorMessage);
+          }
+
+          const rawContent = extractAnalysisResponse(payload);
+          const resultMap = parseModelJsonObject(rawContent);
+
+          return {
+            success: true,
+            batchNumber,
+            totalBatches,
+            batchData,
+            resultMap,
+            consumedTokens: Number(payload?.usage?.total_tokens) || 0
+          };
+        } catch (error) {
+          if (attempt < MAX_RETRIES) {
+            addLog("⚠️ 第 " + batchNumber + "/" + totalBatches + " 批请求失败 (" + error.message + ")，正在进行第 " + attempt + " 次重试...", "warning");
+            await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+            continue;
+          }
+
+          return {
+            success: false,
+            batchNumber,
+            totalBatches,
+            batchData,
+            error
+          };
         }
-
-        if (!response.ok) {
-          const apiErrorMessage = payload?.error?.message || responseText.slice(0, 200) || (response.status + " " + response.statusText);
-          throw new Error("HTTP " + response.status + " " + response.statusText + " - " + apiErrorMessage);
-        }
-
-        const rawContent = extractAnalysisResponse(payload);
-        const resultMap = parseModelJsonObject(rawContent);
-
-        return {
-          success: true,
-          batchNumber,
-          totalBatches,
-          batchData,
-          resultMap,
-          consumedTokens: Number(payload?.usage?.total_tokens) || 0
-        };
-      } catch (error) {
-        return {
-          success: false,
-          batchNumber,
-          totalBatches,
-          batchData,
-          error
-        };
       }
     }
 
     async function runProofreadBatch(batchData, batchNumber, totalBatches, settings) {
+      const MAX_RETRIES = 3;
       const userPrompt = "你是极其专业且克制的游戏 LQA 质检专家。请对比 'baseText' 和 'currentTranslations'，并严格遵守 System 设定的背景与语气。\n"
         + "【绝对基准】：必须且只能以 'baseText' 为唯一基准进行 1对1 校验，禁止外语之间互相干涉！\n"
         + "【修改触发条件】（只有满足以下任意一条才允许返回修改建议）：\n"
@@ -1992,58 +2243,66 @@
         + "待校对数据如下：\n"
         + JSON.stringify(batchData);
 
-      try {
-        const response = await fetch(settings.baseUrl + "/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + settings.apiKey
-          },
-          body: JSON.stringify({
-            model: settings.modelName,
-            temperature: 0,
-            top_p: 0.1,
-            response_format: { type: "json_object" },
-            messages: [
-              { role: "system", content: settings.systemPrompt },
-              { role: "user", content: userPrompt }
-            ]
-          })
-        });
-
-        const responseText = await response.text();
-        let payload = {};
-
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
         try {
-          payload = responseText ? JSON.parse(responseText) : {};
-        } catch (parseError) {
-          throw new Error("服务端返回了无法解析的响应: " + responseText.slice(0, 200));
+          const response = await fetch(settings.baseUrl + "/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + settings.apiKey
+            },
+            body: JSON.stringify({
+              model: settings.modelName,
+              temperature: 0,
+              top_p: 0.1,
+              response_format: { type: "json_object" },
+              messages: [
+                { role: "system", content: settings.systemPrompt },
+                { role: "user", content: userPrompt }
+              ]
+            })
+          });
+
+          const responseText = await response.text();
+          let payload = {};
+
+          try {
+            payload = responseText ? JSON.parse(responseText) : {};
+          } catch (parseError) {
+            throw new Error("服务端返回了无法解析的响应: " + responseText.slice(0, 200));
+          }
+
+          if (!response.ok) {
+            const apiErrorMessage = payload?.error?.message || responseText.slice(0, 200) || (response.status + " " + response.statusText);
+            throw new Error("HTTP " + response.status + " " + response.statusText + " - " + apiErrorMessage);
+          }
+
+          const rawContent = extractAnalysisResponse(payload);
+          const resultMap = parseModelJsonObject(rawContent);
+
+          return {
+            success: true,
+            batchNumber,
+            totalBatches,
+            batchData,
+            resultMap,
+            consumedTokens: Number(payload?.usage?.total_tokens) || 0
+          };
+        } catch (error) {
+          if (attempt < MAX_RETRIES) {
+            addLog("⚠️ 第 " + batchNumber + "/" + totalBatches + " 批请求失败 (" + error.message + ")，正在进行第 " + attempt + " 次重试...", "warning");
+            await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+            continue;
+          }
+
+          return {
+            success: false,
+            batchNumber,
+            totalBatches,
+            batchData,
+            error
+          };
         }
-
-        if (!response.ok) {
-          const apiErrorMessage = payload?.error?.message || responseText.slice(0, 200) || (response.status + " " + response.statusText);
-          throw new Error("HTTP " + response.status + " " + response.statusText + " - " + apiErrorMessage);
-        }
-
-        const rawContent = extractAnalysisResponse(payload);
-        const resultMap = parseModelJsonObject(rawContent);
-
-        return {
-          success: true,
-          batchNumber,
-          totalBatches,
-          batchData,
-          resultMap,
-          consumedTokens: Number(payload?.usage?.total_tokens) || 0
-        };
-      } catch (error) {
-        return {
-          success: false,
-          batchNumber,
-          totalBatches,
-          batchData,
-          error
-        };
       }
     }
 
@@ -2080,6 +2339,7 @@
       lastCheckedIndex = null;
       window.csvData = csvData;
       setPendingLqaState(false);
+      clearLastTaskState();
       if (commitModal.classList.contains("show")) {
         closeCommitModal();
       }
@@ -3178,9 +3438,250 @@
     });
 
     settingsBtn.addEventListener("click", openSettingsModal);
+    async function startTranslationRequest(options = {}) {
+      const isResume = options?.resume === true;
+      const originalButtonLabel = translateBtn.textContent;
+
+      if (isResume) {
+        if (!lastTaskSnapshot || lastTaskSnapshot.type !== "translation") {
+          clearLastTaskState();
+          syncPendingLqaState();
+          addLog("当前没有可继续的翻译任务。", "warning");
+          return;
+        }
+
+        const nextPendingBatchNumber = getNextPendingBatchNumber();
+        if (!nextPendingBatchNumber) {
+          clearLastTaskState();
+          syncPendingLqaState();
+          addLog("当前没有可继续的翻译批次。", "warning");
+          return;
+        }
+
+        await executeTaskFromSnapshot({
+          type: "translation",
+          activeButton: translateBtn,
+          originalButtonLabel,
+          busyLabel: "翻译中...",
+          taskLabel: "翻译",
+          startInfoMessage(totalBatches, concurrency, pendingBatchItems) {
+            return "🚀 正在继续剩余的 " + pendingBatchItems.length + " 批翻译任务，总批次: " + totalBatches + "，并发数: " + concurrency + "...";
+          },
+          groupStopMessage: "⚠️ 翻译队列已在当前并发组后停止。",
+          batchRunner: runTranslationBatch,
+          applyResult: applyBatchTranslations,
+          handleNotes(applyPayload) {
+            applyPayload.notes.forEach(({ row, note }) => {
+              addLog("💡 行 [" + (row + 1) + "] AI 巧思：" + note, "success");
+            });
+          }
+        });
+        return;
+      }
+
+      if (!window.csvData.length || !csvHeaders.length) {
+        addLog("请先上传并解析 CSV 文件，再开始翻译。", "error");
+        return;
+      }
+
+      if (!selectedBaseLanguage) {
+        addLog("请先在语言配置中选择基准语言。", "error");
+        return;
+      }
+
+      const targetLangs = getSelectedTargetLanguages();
+      if (!targetLangs.length) {
+        addLog("请至少勾选一个目标语言。", "error");
+        return;
+      }
+
+      const {
+        apiKey: currentApiKey,
+        baseUrl: currentBaseUrl,
+        modelName: currentModelName,
+        systemPrompt: currentSystemPrompt,
+        concurrency
+      } = getTranslationSettings();
+
+      if (!currentApiKey) {
+        addLog("请先在偏好设置中填写 API Key，再开始翻译。", "error");
+        return;
+      }
+
+      clearLastTaskState();
+
+      const mode = document.querySelector('input[name="mode"]:checked')?.value || "translate-empty";
+      const translationJobs = buildTranslationJobs(targetLangs, mode);
+      if (!translationJobs.length) {
+        addLog("当前没有需要翻译的单元格。", "warning");
+        syncPendingLqaState();
+        return;
+      }
+
+      const batches = buildDynamicBatches(translationJobs);
+      if (!batches.length) {
+        addLog("当前没有可发送的翻译批次。", "warning");
+        syncPendingLqaState();
+        return;
+      }
+
+      createTaskSnapshot("translation", batches, {
+        apiKey: currentApiKey,
+        baseUrl: currentBaseUrl,
+        modelName: currentModelName,
+        systemPrompt: currentSystemPrompt,
+        concurrency
+      });
+
+      addTaskDividerLog("翻译");
+      await executeTaskFromSnapshot({
+        type: "translation",
+        activeButton: translateBtn,
+        originalButtonLabel,
+        busyLabel: "翻译中...",
+        taskLabel: "翻译",
+        startInfoMessage(totalBatches, currentConcurrency) {
+          return "🚀 任务已动态切分为 " + totalBatches + " 批，并发数: " + currentConcurrency + "...";
+        },
+        groupStopMessage: "⚠️ 翻译队列已在当前并发组后停止。",
+        batchRunner: runTranslationBatch,
+        applyResult: applyBatchTranslations,
+        handleNotes(applyPayload) {
+          applyPayload.notes.forEach(({ row, note }) => {
+            addLog("💡 行 [" + (row + 1) + "] AI 巧思：" + note, "success");
+          });
+        }
+      });
+    }
+
+    async function startProofreadRequest(options = {}) {
+      const isResume = options?.resume === true;
+      const originalButtonLabel = proofreadBtn.textContent;
+
+      if (isResume) {
+        if (!lastTaskSnapshot || lastTaskSnapshot.type !== "proofread") {
+          clearLastTaskState();
+          syncPendingLqaState();
+          addLog("当前没有可继续的校对任务。", "warning");
+          return;
+        }
+
+        const nextPendingBatchNumber = getNextPendingBatchNumber();
+        if (!nextPendingBatchNumber) {
+          clearLastTaskState();
+          syncPendingLqaState();
+          addLog("当前没有可继续的校对批次。", "warning");
+          return;
+        }
+
+        await executeTaskFromSnapshot({
+          type: "proofread",
+          activeButton: proofreadBtn,
+          originalButtonLabel,
+          busyLabel: "校对中...",
+          taskLabel: "校对",
+          startInfoMessage(totalBatches, concurrency, pendingBatchItems) {
+            return "🚀 正在继续剩余的 " + pendingBatchItems.length + " 批校对任务，总批次: " + totalBatches + "，并发数: " + concurrency + "...";
+          },
+          groupStopMessage: "⚠️ 校对队列已在当前并发组后停止。",
+          batchRunner: runProofreadBatch,
+          applyResult: applyBatchProofreading,
+          handleNotes(applyPayload) {
+            applyPayload.notes.forEach(({ row, lang, note }) => {
+              addLog(buildLqaLogHtml(row, lang, note || "已根据 LQA 规则完成修正。"), "info", {
+                html: true,
+                className: "lqa",
+                id: buildLogElementId(row, lang)
+              });
+            });
+          }
+        });
+        return;
+      }
+
+      if (!window.csvData.length || !csvHeaders.length) {
+        addLog("请先上传并解析 CSV 文件，再开始校对。", "error");
+        return;
+      }
+
+      if (!selectedBaseLanguage) {
+        addLog("请先在语言配置中选择基准语言。", "error");
+        return;
+      }
+
+      const targetLangs = getSelectedTargetLanguages();
+      if (!targetLangs.length) {
+        addLog("请至少勾选一个目标语言。", "error");
+        return;
+      }
+
+      const {
+        apiKey: currentApiKey,
+        baseUrl: currentBaseUrl,
+        modelName: currentModelName,
+        systemPrompt: currentSystemPrompt,
+        concurrency
+      } = getTranslationSettings();
+
+      if (!currentApiKey) {
+        addLog("请先在偏好设置中填写 API Key，再开始校对。", "error");
+        return;
+      }
+
+      clearLastTaskState();
+
+      const proofreadJobs = buildProofreadJobs(targetLangs);
+      if (!proofreadJobs.length) {
+        addLog("当前没有需要校对的单元格。", "warning");
+        syncPendingLqaState();
+        return;
+      }
+
+      const batches = buildDynamicBatches(proofreadJobs);
+      if (!batches.length) {
+        addLog("当前没有可发送的校对批次。", "warning");
+        syncPendingLqaState();
+        return;
+      }
+
+      createTaskSnapshot("proofread", batches, {
+        apiKey: currentApiKey,
+        baseUrl: currentBaseUrl,
+        modelName: currentModelName,
+        systemPrompt: currentSystemPrompt,
+        concurrency
+      });
+
+      addTaskDividerLog("校对");
+      await executeTaskFromSnapshot({
+        type: "proofread",
+        activeButton: proofreadBtn,
+        originalButtonLabel,
+        busyLabel: "校对中...",
+        taskLabel: "校对",
+        startInfoMessage(totalBatches, currentConcurrency) {
+          return "🚀 校对任务已动态切分为 " + totalBatches + " 批，并发数: " + currentConcurrency + "...";
+        },
+        groupStopMessage: "⚠️ 校对队列已在当前并发组后停止。",
+        batchRunner: runProofreadBatch,
+        applyResult: applyBatchProofreading,
+        handleNotes(applyPayload) {
+          applyPayload.notes.forEach(({ row, lang, note }) => {
+            addLog(buildLqaLogHtml(row, lang, note || "已根据 LQA 规则完成修正。"), "info", {
+              html: true,
+              className: "lqa",
+              id: buildLogElementId(row, lang)
+            });
+          });
+        }
+      });
+    }
+
     toggleApiKeyVisibilityBtn.addEventListener("click", () => {
       updateApiKeyVisibility(settingsApiKey.type === "password");
     });
+
+    updateApiKeyVisibility(settingsApiKey.type === "password");
     refreshModelsBtn.addEventListener("click", refreshModelList);
     settingsCancelBtn.addEventListener("click", closeSettingsModal);
     settingsSaveBtn.addEventListener("click", saveSettings);
@@ -3193,6 +3694,24 @@
     });
 
     proofreadBtn.addEventListener("click", startProofreadRequest);
+    resumeTaskBtn.addEventListener("click", () => {
+      const nextPendingBatchNumber = getNextPendingBatchNumber();
+      if (!nextPendingBatchNumber || !lastTaskStatus.type) {
+        clearLastTaskState();
+        syncPendingLqaState();
+        addLog("当前没有可继续的未完成任务。", "warning");
+        return;
+      }
+
+      addLog("正在从断点处（第 " + nextPendingBatchNumber + " 批）尝试恢复任务...", "info");
+
+      if (lastTaskStatus.type === "proofread") {
+        startProofreadRequest({ resume: true });
+        return;
+      }
+
+      startTranslationRequest({ resume: true });
+    });
     commitBtn.addEventListener("click", openCommitModal);
     commitRevertAllBtn.addEventListener("click", discardAllLqaChanges);
     commitCancelBtn.addEventListener("click", closeCommitModal);
