@@ -663,6 +663,9 @@
     tbody tr.data-row.is-selected td:not(.lqa-updated-cell):not(.lqa-original-cell) {
       background-color: rgba(79, 195, 247, 0.03);
     }
+    tr.selected-row {
+      background-color: rgba(79, 195, 247, 0.05) !important;
+    }
     tbody tr.data-row.is-unselected td:not(.lqa-updated-cell):not(.lqa-original-cell) {
       background-color: rgba(255, 255, 255, 0.018);
     }
@@ -1721,7 +1724,7 @@
       setPendingLqaState(false);
       closeCommitModal();
       window.csvData = csvData;
-      renderTable(csvHeaders, csvData);
+      renderTableWithScrollPreservation(csvHeaders, csvData);
       updateStats(csvHeaders, csvData);
       syncPendingLqaState();
       addLog("✅ 已保存并合并所有 LQA 修改。历史记录已清理。", "success");
@@ -1747,7 +1750,7 @@
       setPendingLqaState(false);
       closeCommitModal();
       window.csvData = csvData;
-      renderTable(csvHeaders, csvData);
+      renderTableWithScrollPreservation(csvHeaders, csvData);
       updateStats(csvHeaders, csvData);
       syncPendingLqaState();
       addLog("🗑️ 用户已手动放弃本轮所有 LQA 修改，数据已恢复至校对前状态。", "warning");
@@ -1948,7 +1951,7 @@
             }
           });
 
-          renderTable(csvHeaders, csvData);
+          renderTableWithScrollPreservation(csvHeaders, csvData);
           updateStats(csvHeaders, csvData);
           totalTokens += groupTokenSum;
           updateTokenLabel();
@@ -2519,6 +2522,76 @@
       `;
     }
 
+    function getRowElement(rowIndex) {
+      return document.getElementById("table-row-" + rowIndex)
+        || tableWrap.querySelector('[data-row-index="' + rowIndex + '"]');
+    }
+
+    function syncRowSelectionDom(rowIndex, isSelected) {
+      const rowElement = getRowElement(rowIndex);
+      if (!rowElement) {
+        return;
+      }
+
+      const checkbox = rowElement.querySelector(".row-select-checkbox");
+      if (checkbox) {
+        checkbox.checked = isSelected;
+      }
+
+      rowElement.classList.toggle("selected-row", isSelected);
+      rowElement.classList.toggle("is-selected", isSelected);
+      rowElement.classList.toggle("is-unselected", !isSelected);
+    }
+
+    function syncAllVisibleRowSelectionDom() {
+      tableWrap.querySelectorAll("tr[data-row-index]").forEach((rowElement) => {
+        const rowIndex = Number(rowElement.dataset.rowIndex);
+        if (!Number.isInteger(rowIndex) || rowIndex < 0 || rowIndex >= csvData.length) {
+          return;
+        }
+
+        syncRowSelectionDom(rowIndex, csvData[rowIndex]?._selected !== false);
+      });
+    }
+
+    function syncSelectAllCheckboxState() {
+      const selectAllCheckbox = document.getElementById("selectAllCheckbox");
+      if (!selectAllCheckbox) {
+        return;
+      }
+
+      const totalRows = Array.isArray(csvData) ? csvData.length : 0;
+      const selectedRows = Array.isArray(csvData)
+        ? csvData.filter((row) => row?._selected !== false).length
+        : 0;
+
+      selectAllCheckbox.checked = totalRows > 0 && selectedRows === totalRows;
+      selectAllCheckbox.indeterminate = selectedRows > 0 && selectedRows < totalRows;
+    }
+
+    function syncSelectionUi(rowIndexes = []) {
+      if (Array.isArray(rowIndexes) && rowIndexes.length) {
+        rowIndexes.forEach((rowIndex) => {
+          if (!Number.isInteger(rowIndex) || rowIndex < 0 || rowIndex >= csvData.length) {
+            return;
+          }
+          syncRowSelectionDom(rowIndex, csvData[rowIndex]?._selected !== false);
+        });
+      }
+
+      syncSelectAllCheckboxState();
+      updateStats(csvHeaders, csvData);
+    }
+
+    function renderTableWithScrollPreservation(headers = csvHeaders, rows = csvData, afterRender) {
+      const currentScrollTop = tableWrap.scrollTop;
+      renderTable(headers, rows);
+      tableWrap.scrollTop = currentScrollTop;
+      if (typeof afterRender === "function") {
+        afterRender();
+      }
+    }
+
     function renderTable(headers, rows) {
       if (!headers.length || !rows.length) {
         renderEmptyTableState("没有可显示的数据", "请确认文件包含表头，并且至少有一行有效数据。");
@@ -2574,15 +2647,12 @@
         }).join("");
 
         const selectionCell = '<td class="select-col"><input class="row-select-checkbox" type="checkbox" data-row="' + index + '"' + (isSelected ? " checked" : "") + "></td>";
-        const rowClass = ' class="data-row ' + (isSelected ? "is-selected" : "is-unselected") + '"';
-        return "<tr id=\"table-row-" + index + "\"" + rowClass + ">" + selectionCell + "<td class=\"index-col\">" + (index + 1) + "</td>" + cells + "</tr>";
+        const rowClass = ' class="data-row ' + (isSelected ? "selected-row is-selected" : "is-unselected") + '"';
+        return "<tr id=\"table-row-" + index + "\" data-row-index=\"" + index + "\"" + rowClass + ">" + selectionCell + "<td class=\"index-col\">" + (index + 1) + "</td>" + cells + "</tr>";
       }).join("");
 
       tableWrap.innerHTML = "<table>" + thead + "<tbody>" + tbody + "</tbody></table>";
-      const selectAllCheckbox = document.getElementById("selectAllCheckbox");
-      if (selectAllCheckbox) {
-        selectAllCheckbox.indeterminate = selectedRows > 0 && selectedRows < totalRows;
-      }
+      syncSelectAllCheckboxState();
     }
 
     function buildExportRows(headers, rows) {
@@ -3969,7 +4039,7 @@
 
       window.csvData = csvData;
       commitSummaryContent.innerHTML = buildCommitSummaryHtml();
-      renderTable(csvHeaders, csvData);
+      renderTableWithScrollPreservation(csvHeaders, csvData);
       updateStats(csvHeaders, csvData);
     });
 
@@ -3998,7 +4068,7 @@
         }
 
         window.csvData = csvData;
-        renderTable(csvHeaders, csvData);
+        renderTableWithScrollPreservation(csvHeaders, csvData);
         updateStats(csvHeaders, csvData);
         return;
       }
@@ -4051,7 +4121,8 @@
         });
         lastCheckedIndex = null;
         window.csvData = csvData;
-        renderTable(csvHeaders, csvData);
+        syncAllVisibleRowSelectionDom();
+        syncSelectAllCheckboxState();
         updateStats(csvHeaders, csvData);
         return;
       }
@@ -4066,23 +4137,25 @@
       }
 
       const nextChecked = target.checked;
+      const affectedRows = [];
       if (pendingRowSelectShift && lastCheckedIndex !== null && lastCheckedIndex >= 0 && lastCheckedIndex < csvData.length) {
         const start = Math.min(lastCheckedIndex, rowIndex);
         const end = Math.max(lastCheckedIndex, rowIndex);
         for (let index = start; index <= end; index += 1) {
           if (csvData[index] && typeof csvData[index] === "object") {
             csvData[index]._selected = nextChecked;
+            affectedRows.push(index);
           }
         }
       } else if (csvData[rowIndex] && typeof csvData[rowIndex] === "object") {
         csvData[rowIndex]._selected = nextChecked;
+        affectedRows.push(rowIndex);
       }
 
+      window.csvData = csvData;
+      syncSelectionUi(affectedRows);
       lastCheckedIndex = rowIndex;
       pendingRowSelectShift = false;
-      window.csvData = csvData;
-      renderTable(csvHeaders, csvData);
-      updateStats(csvHeaders, csvData);
     });
 
     logView.addEventListener("click", (event) => {
