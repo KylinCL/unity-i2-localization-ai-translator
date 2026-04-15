@@ -246,6 +246,129 @@
       gap: 10px;
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .settings-modal-card {
+      width: min(920px, 82vw);
+      max-height: min(88vh, 920px);
+    }
+    #settingsModal .modal-header {
+      align-items: flex-start;
+      padding: 20px 24px 18px;
+    }
+    #settingsModal .modal-body {
+      display: grid;
+      gap: 16px;
+      padding: 20px 24px 22px;
+    }
+    #settingsModal .modal-footer {
+      padding: 18px 24px 22px;
+      gap: 14px;
+    }
+    #settingsModal .modal-subtitle {
+      max-width: 620px;
+      font-size: 0.8rem;
+      line-height: 1.65;
+    }
+    #settingsModal .modal-field-grid {
+      gap: 14px 16px;
+    }
+    #settingsModal .field-group.settings-field-card {
+      gap: 12px;
+      padding: 14px 14px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    #settingsModal .field-group.settings-field-full {
+      grid-column: 1 / -1;
+    }
+    #settingsModal .field-group.settings-field-card label {
+      font-size: 0.79rem;
+      letter-spacing: 0.02em;
+      color: #d8e4f3;
+    }
+    #settingsModal .field-group.settings-field-card input[type="text"],
+    #settingsModal .field-group.settings-field-card input[type="password"],
+    #settingsModal .field-group.settings-field-card input[type="number"] {
+      min-height: 46px;
+    }
+    #settingsModal .field-group.settings-field-card input[type="number"] {
+      max-width: 220px;
+    }
+    .stepper-input::-webkit-inner-spin-button,
+    .stepper-input::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    #settingsModal .stepper-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    #settingsModal .stepper-input {
+      -moz-appearance: textfield;
+      text-align: center;
+      width: 80px;
+      max-width: 80px;
+      min-width: 80px;
+      padding-left: 8px;
+      padding-right: 8px;
+    }
+    #settingsModal .stepper-btn {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid rgba(103, 116, 136, 0.38);
+      background: rgba(255, 255, 255, 0.035);
+      color: #f4f8ff;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+    }
+    #settingsModal .stepper-btn:hover:not(:disabled) {
+      background: rgba(79, 195, 247, 0.12);
+      border-color: rgba(79, 195, 247, 0.34);
+    }
+    #settingsModal .stepper-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    #settingsModal .setting-remark {
+      margin: 0;
+      font-size: 12px;
+      color: #8f9bb0;
+      line-height: 1.6;
+    }
+    #settingsModal .setting-remark .warning-text {
+      color: #e5a43b;
+    }
+    #settingsModal .input-with-action,
+    #settingsModal .model-input-row {
+      gap: 12px;
+    }
+    #settingsModal .refresh-btn {
+      min-width: 108px;
+      padding: 0 16px;
+    }
+    #settingsModal .model-input-row input[type="text"] {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    #settingsModal .hint.settings-help-text {
+      max-width: 540px;
+      margin-top: 2px;
+      color: #95a5bb;
+      line-height: 1.72;
+    }
+    #settingsModal .field-group.settings-field-full .hint.settings-help-text {
+      max-width: 760px;
+    }
     .panel-body, .field-group, .form-grid, .language-config-grid { min-width: 0; }
     label { font-size: 0.82rem; color: #c6d1df; font-weight: 600; }
 
@@ -994,6 +1117,24 @@
       }
       .modal-backdrop { padding: 14px; }
       .checkbox-list { grid-template-columns: 1fr; }
+      #settingsModal .modal-header,
+      #settingsModal .modal-body,
+      #settingsModal .modal-footer {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+      #settingsModal .field-group.settings-field-card input[type="number"] {
+        max-width: 100%;
+      }
+      #settingsModal .stepper-input {
+        max-width: 80px !important;
+      }
+      #settingsModal .model-input-row {
+        flex-wrap: wrap;
+      }
+      #settingsModal .refresh-btn {
+        min-height: 46px;
+      }
     }
   </style>
 </head>
@@ -1162,7 +1303,7 @@
   </div>
 
   <div id="settingsModal" class="modal-backdrop" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-card settings-modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <div class="modal-header">
         <div>
           <h2 id="settingsTitle" class="modal-title">偏好设置</h2>
@@ -1171,7 +1312,7 @@
       </div>
       <div class="modal-body">
         <div class="modal-field-grid">
-          <div class="field-group">
+          <div class="field-group settings-field-card">
             <label for="settingsApiKey">API Key</label>
             <div class="input-with-action">
               <div class="input-shell">
@@ -1180,22 +1321,32 @@
               </div>
             </div>
           </div>
-          <div class="field-group">
+          <div class="field-group settings-field-card">
             <label for="settingsBaseUrl">Base URL</label>
             <input id="settingsBaseUrl" type="text" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1">
           </div>
-          <div class="field-group">
+          <div class="field-group settings-field-card">
             <label for="settingsConcurrency">并发请求数</label>
-            <input id="settingsConcurrency" type="number" min="1" max="5" value="3" placeholder="1-5">
+            <div class="stepper-control">
+              <button type="button" class="stepper-btn" id="concurrencyMinus">-</button>
+              <input id="settingsConcurrency" class="stepper-input" type="number" min="1" max="20" value="5" placeholder="5">
+              <button type="button" class="stepper-btn" id="concurrencyPlus">+</button>
+            </div>
+            <p class="setting-remark">
+              设定可同时向模型发起的 API 请求数量。<br>
+              建议范围: <strong>1 ~ 20</strong> (默认值: 5)<br>
+              <span class="warning-text">⚠️ 提示: 过高的并发设置极易导致 API 触发频率限制 (Rate Limit) 报错。</span>
+            </p>
           </div>
-          <div class="field-group">
+          <div class="field-group settings-field-card">
             <label for="settingsContextDepth">上下文回溯行数 (Context Depth)</label>
             <input id="settingsContextDepth" type="number" min="0" value="50" placeholder="50">
+            <div class="hint settings-help-text">仅对普通翻译与深度精修（Deep LQA）生效，普通校对模式不会注入前文上下文。</div>
           </div>
         </div>
 
         <div class="modal-field-grid">
-          <div class="field-group">
+          <div class="field-group settings-field-card settings-field-full">
             <label for="settingsModelName">模型名称</label>
             <div class="model-input-row">
               <input id="settingsModelName" type="text" list="modelOptions" value="GPT-5.4" placeholder="请选择或输入模型">
@@ -1207,10 +1358,10 @@
           </div>
         </div>
 
-        <div class="field-group">
+        <div class="field-group settings-field-card settings-field-full">
           <label for="settingsDescColumnName">Desc 列字段名</label>
           <input id="settingsDescColumnName" type="text" value="Desc" placeholder="例如：Desc">
-          <div class="hint">用于指定哪一列作为语气与上下文参考来源，默认会使用 <code>Desc</code>。</div>
+          <div class="hint settings-help-text">用于指定哪一列作为语气与上下文参考来源，默认会使用 <code>Desc</code>。</div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1245,7 +1396,8 @@
       modelName: "translatorTool.modelName",
       descColumnName: "translatorTool.descColumnName",
       concurrency: "translatorTool.concurrency",
-      contextDepth: "translatorTool.contextDepth"
+      contextDepth: "translatorTool.contextDepth",
+      systemPrompt: "translatorTool.systemPrompt"
     };
 
     let csvData = [];
@@ -1256,7 +1408,7 @@
     let baseUrl = "https://api.openai.com/v1";
     let modelName = "GPT-5.4";
     let descColumnName = "Desc";
-    let settingsConcurrency = 3;
+    let settingsConcurrency = 5;
     let contextDepth = 50;
     let selectedBaseLanguage = "";
     let selectedTargetLanguages = [];
@@ -1311,6 +1463,8 @@
     const settingsApiKey = document.getElementById("settingsApiKey");
     const settingsBaseUrl = document.getElementById("settingsBaseUrl");
     const settingsConcurrencyInput = document.getElementById("settingsConcurrency");
+    const concurrencyMinusBtn = document.getElementById("concurrencyMinus");
+    const concurrencyPlusBtn = document.getElementById("concurrencyPlus");
     const settingsContextDepthInput = document.getElementById("settingsContextDepth");
     const settingsModelName = document.getElementById("settingsModelName");
     const modelOptions = document.getElementById("modelOptions");
@@ -1325,6 +1479,8 @@
     const commitCancelBtn = document.getElementById("commitCancelBtn");
     const commitConfirmBtn = document.getElementById("commitConfirmBtn");
     const commitCloseBtn = document.getElementById("commitCloseBtn");
+    const MIN_CONCURRENCY = 1;
+    const MAX_CONCURRENCY = 20;
     let promptDraftValue = "";
 
     function escapeHtml(value) {
@@ -1818,10 +1974,24 @@
     function normalizeConcurrency(value) {
       const parsed = Number(value);
       if (!Number.isFinite(parsed)) {
-        return 3;
+        return 5;
       }
 
-      return Math.min(5, Math.max(1, Math.round(parsed)));
+      return Math.min(MAX_CONCURRENCY, Math.max(MIN_CONCURRENCY, Math.round(parsed)));
+    }
+
+    function updateStepperButtons() {
+      if (!settingsConcurrencyInput || !concurrencyMinusBtn || !concurrencyPlusBtn) {
+        return;
+      }
+
+      let value = parseInt(settingsConcurrencyInput.value, 10);
+      if (Number.isNaN(value)) {
+        value = 5;
+      }
+
+      concurrencyMinusBtn.disabled = value <= MIN_CONCURRENCY;
+      concurrencyPlusBtn.disabled = value >= MAX_CONCURRENCY;
     }
 
     function normalizeContextDepth(value) {
@@ -2004,7 +2174,7 @@
     function getTranslationSettings() {
       const currentSettings = getAnalysisSettings();
       const currentSystemPrompt = systemPrompt.value.trim() || DEFAULT_TRANSLATION_SYSTEM_PROMPT;
-      const currentConcurrency = normalizeConcurrency(settingsConcurrencyInput?.value || settingsConcurrency || getStoredValue(STORAGE_KEYS.concurrency, "3"));
+      const currentConcurrency = normalizeConcurrency(settingsConcurrencyInput?.value || settingsConcurrency || getStoredValue(STORAGE_KEYS.concurrency, "5"));
       const currentContextDepth = normalizeContextDepth(settingsContextDepthInput?.value || contextDepth || getStoredValue(STORAGE_KEYS.contextDepth, "50"));
 
       return {
@@ -2690,8 +2860,12 @@
       baseUrl = getStoredValue(STORAGE_KEYS.baseUrl, "https://api.openai.com/v1");
       modelName = getStoredValue(STORAGE_KEYS.modelName, "GPT-5.4");
       descColumnName = getStoredValue(STORAGE_KEYS.descColumnName, "Desc").trim() || "Desc";
-      settingsConcurrency = normalizeConcurrency(getStoredValue(STORAGE_KEYS.concurrency, "3"));
+      settingsConcurrency = normalizeConcurrency(getStoredValue(STORAGE_KEYS.concurrency, "5"));
       contextDepth = normalizeContextDepth(getStoredValue(STORAGE_KEYS.contextDepth, "50"));
+      const storedSystemPrompt = getStoredValue(STORAGE_KEYS.systemPrompt, null);
+      if (storedSystemPrompt !== null) {
+        systemPrompt.value = storedSystemPrompt;
+      }
     }
 
     function syncSettingsForm() {
@@ -2704,6 +2878,7 @@
       settingsModelName.placeholder = "请选择或输入模型";
       renderModelOptions([modelName, "GPT-5.4"]);
       updateApiKeyVisibility(false);
+      updateStepperButtons();
     }
 
     function openSettingsModal() {
@@ -2711,6 +2886,7 @@
       settingsModal.classList.add("show");
       settingsModal.setAttribute("aria-hidden", "false");
       document.body.classList.add("modal-open");
+      updateStepperButtons();
       settingsApiKey.focus();
     }
 
@@ -2728,6 +2904,7 @@
       settingsDescColumnName.value = descColumnName;
       settingsConcurrency = normalizeConcurrency(settingsConcurrencyInput.value);
       settingsConcurrencyInput.value = settingsConcurrency;
+      updateStepperButtons();
       contextDepth = normalizeContextDepth(settingsContextDepthInput.value);
       settingsContextDepthInput.value = contextDepth;
 
@@ -2738,6 +2915,7 @@
         localStorage.setItem(STORAGE_KEYS.descColumnName, descColumnName);
         localStorage.setItem(STORAGE_KEYS.concurrency, String(settingsConcurrency));
         localStorage.setItem(STORAGE_KEYS.contextDepth, String(contextDepth));
+        localStorage.setItem(STORAGE_KEYS.systemPrompt, systemPrompt.value);
         addLog("偏好设置已保存到 localStorage。", "success");
       } catch (error) {
         addLog("保存本地设置失败: " + error.message, "error");
@@ -3698,6 +3876,12 @@
     });
     promptSaveBtn.addEventListener("click", () => {
       updatePromptPreview();
+      try {
+        localStorage.setItem(STORAGE_KEYS.systemPrompt, systemPrompt.value);
+        addLog("✅ 背景设定已保存至本地缓存", "info");
+      } catch (error) {
+        addLog("保存背景设定到本地缓存失败: " + error.message, "error");
+      }
       closePromptModal();
     });
     systemPrompt.addEventListener("input", updatePromptPreview);
@@ -3977,6 +4161,31 @@
 
     updateApiKeyVisibility(settingsApiKey.type === "password");
     refreshModelsBtn.addEventListener("click", refreshModelList);
+    if (concurrencyMinusBtn && concurrencyPlusBtn && settingsConcurrencyInput) {
+      concurrencyMinusBtn.addEventListener("click", () => {
+        const currentValue = normalizeConcurrency(settingsConcurrencyInput.value);
+        if (currentValue > MIN_CONCURRENCY) {
+          settingsConcurrencyInput.value = currentValue - 1;
+          updateStepperButtons();
+        }
+      });
+
+      concurrencyPlusBtn.addEventListener("click", () => {
+        const currentValue = normalizeConcurrency(settingsConcurrencyInput.value);
+        if (currentValue < MAX_CONCURRENCY) {
+          settingsConcurrencyInput.value = currentValue + 1;
+          updateStepperButtons();
+        }
+      });
+
+      settingsConcurrencyInput.addEventListener("input", updateStepperButtons);
+      settingsConcurrencyInput.addEventListener("blur", () => {
+        settingsConcurrencyInput.value = normalizeConcurrency(settingsConcurrencyInput.value);
+        updateStepperButtons();
+      });
+
+      updateStepperButtons();
+    }
     settingsCancelBtn.addEventListener("click", closeSettingsModal);
     settingsSaveBtn.addEventListener("click", saveSettings);
     analyzeContextBtn.addEventListener("click", startContextAnalysisRequest);
