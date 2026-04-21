@@ -905,6 +905,34 @@
       background: rgba(255, 165, 0, 0.1);
       color: #ffe2b8;
     }
+    .log-entry.log-summary-divider {
+      color: #4caf50 !important;
+      font-weight: 900 !important;
+      letter-spacing: 2px;
+      border-color: rgba(76, 175, 80, 0.28) !important;
+      background: rgba(76, 175, 80, 0.05) !important;
+    }
+    .log-entry.log-summary-title {
+      color: #4caf50 !important;
+      font-size: 1.15em !important;
+      font-weight: bold !important;
+      background-color: rgba(76, 175, 80, 0.15) !important;
+      border-left: 4px solid #4caf50 !important;
+      border-color: rgba(76, 175, 80, 0.32) !important;
+      padding: 8px 12px !important;
+    }
+    .log-entry.log-summary-data {
+      color: #fff !important;
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      border: 1px dashed #4caf50 !important;
+      padding: 10px 12px !important;
+      line-height: 1.6 !important;
+    }
+    .log-entry.log-summary-data strong {
+      color: #ffeb3b !important;
+      font-size: 1.1em;
+      padding: 0 4px;
+    }
     .log-time {
       color: var(--muted);
       margin-right: 6px;
@@ -2060,6 +2088,8 @@
       beginQueueRun(activeButton, busyLabel);
       let processedBatchCount = 0;
       let unchangedBatchCount = 0;
+      let sessionTotalTokens = 0;
+      let sessionModifiedCells = 0;
 
       try {
         const totalBatches = lastTaskSnapshot.batches.length;
@@ -2104,6 +2134,8 @@
 
             const applyPayload = applyResult(result.batchData, result.resultMap);
             groupTokenSum += result.consumedTokens;
+            sessionTotalTokens += Number(result.consumedTokens) || 0;
+            sessionModifiedCells += Number(applyPayload.cellsUpdated) || 0;
             markBatchCompleted(result.batchNumber);
             handleNotes(applyPayload, result);
             processedBatchCount += 1;
@@ -2144,10 +2176,19 @@
           }
         }
 
-        addLog(
-          "任务执行完毕，共处理 " + processedBatchCount + " 个批次，跳过了 " + unchangedBatchCount + " 个无变动批次。",
-          "info"
-        );
+        const taskTypeName = type === "proofread" ? "校对" : "翻译";
+        addLog("===========================================================================", "info", { className: "log-summary-divider" });
+        addLog("🏁 ==== 本轮任务执行结束 ==== [" + taskTypeName + "]", "success", { className: "log-summary-title" });
+        const summaryHtml = "📊 数据总览：共处理完成 <strong>"
+          + processedBatchCount
+          + "</strong> 个批次，跳过了 <strong>"
+          + unchangedBatchCount
+          + "</strong> 个无变动批次。实际修改/更新 <strong>"
+          + sessionModifiedCells
+          + "</strong> 个单元格。累计消耗 Token: <strong>"
+          + sessionTotalTokens
+          + "</strong>";
+        addLog(summaryHtml, "info", { className: "log-summary-data", html: true });
 
         if (lastTaskSnapshot && getPendingBatchItems().length === 0) {
           clearLastTaskState();
