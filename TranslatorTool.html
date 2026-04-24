@@ -1382,6 +1382,7 @@
                 <option value="GPT-5.4"></option>
               </datalist>
               <button id="refreshModelsBtn" class="refresh-btn" type="button">刷新 🔄</button>
+              <button id="verifyModelsBtn" class="refresh-btn" type="button">批量校验</button>
             </div>
           </div>
         </div>
@@ -1501,6 +1502,7 @@
     const settingsSaveBtn = document.getElementById("settingsSaveBtn");
     const toggleApiKeyVisibilityBtn = document.getElementById("toggleApiKeyVisibilityBtn");
     const refreshModelsBtn = document.getElementById("refreshModelsBtn");
+    const verifyModelsBtn = document.getElementById("verifyModelsBtn");
     const commitModal = document.getElementById("commitModal");
     const commitSummaryContent = document.getElementById("commitSummaryContent");
     const commitRevertAllBtn = document.getElementById("commitRevertAllBtn");
@@ -1977,14 +1979,16 @@
       document.body.classList.remove("modal-open");
     }
 
-    function renderModelOptions(modelIds) {
+    function renderModelOptions(modelIds, allowFallback = true) {
       const uniqueIds = [...new Set((modelIds || []).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       modelOptions.innerHTML = "";
 
       if (!uniqueIds.length) {
-        const fallbackOption = document.createElement("option");
-        fallbackOption.value = "GPT-5.4";
-        modelOptions.appendChild(fallbackOption);
+        if (allowFallback) {
+          const fallbackOption = document.createElement("option");
+          fallbackOption.value = "GPT-5.4";
+          modelOptions.appendChild(fallbackOption);
+        }
         return;
       }
 
@@ -1999,46 +2003,39 @@
       return (url || "").trim().replace(/\/+$/, "");
     }
 
-    let validatedChatModelIds = new Set();
-    let validatedChatModelsBaseUrl = "";
-
-    function isExplicitlyUnsupportedModelId(modelId) {
-      const normalizedModelId = String(modelId || "").trim().toLowerCase();
-      if (!normalizedModelId) {
-        return true;
-      }
-
-      const excludedPatterns = [
-        /-pro($|-)/,
-        /embedding/,
-        /rerank/,
-        /whisper/,
-        /\btts\b/,
-        /transcri/,
-        /speech/,
-        /moderation/,
-        /dall-e/,
-        /image/,
-        /realtime/,
-        /computer-use/,
-        /babbage/,
-        /curie/,
-        /davinci/,
-        /ada/,
-        /instruct/,
-        /omni/
-      ];
-
-      return excludedPatterns.some((pattern) => pattern.test(normalizedModelId));
-    }
-
-    function canAttemptChatProbe(modelId) {
+    function isLikelyTextModelId(modelId) {
       const normalizedModelId = String(modelId || "").trim().toLowerCase();
       if (!normalizedModelId) {
         return false;
       }
 
-      return !isExplicitlyUnsupportedModelId(normalizedModelId);
+      const excludedPatterns = [
+        /dall-e/,
+        /image/,
+        /\btts\b/,
+        /speech/,
+        /whisper/,
+        /transcri/,
+        /embedding/,
+        /rerank/
+      ];
+
+      return !excludedPatterns.some((pattern) => pattern.test(normalizedModelId));
+    }
+
+    function getModelOptionIds() {
+      return Array.from(modelOptions?.options || [])
+        .map((option) => String(option.value || "").trim())
+        .filter(Boolean);
+    }
+
+    function addModelOption(modelId) {
+      const trimmedModelId = String(modelId || "").trim();
+      if (!trimmedModelId) {
+        return;
+      }
+
+      renderModelOptions([...getModelOptionIds(), trimmedModelId], false);
     }
 
     async function probeModel(modelId, apiKey, baseUrl) {
@@ -2051,7 +2048,7 @@
         body: JSON.stringify({
           model: modelId,
           messages: [
-            { role: "user", content: "." }
+            { role: "user", content: "hi" }
           ],
           max_tokens: 1
         })
@@ -2063,94 +2060,67 @@
         || /not a chat model/.test(normalizedErrorText)
         || /not supported in the v1\/chat\/completions endpoint/.test(normalizedErrorText)
         || /did you mean to use v1\/completions/.test(normalizedErrorText);
+      const authFailure = response.status === 401
+        || response.status === 403
+        || /unauthorized/.test(normalizedErrorText)
+        || /invalid api key/.test(normalizedErrorText)
+        || /authentication/.test(normalizedErrorText)
+        || /forbidden/.test(normalizedErrorText);
+      const quotaLike = response.status === 429
+        || /rate limit/.test(normalizedErrorText)
+        || /quota/.test(normalizedErrorText)
+        || /insufficient_quota/.test(normalizedErrorText)
+        || /billing/.test(normalizedErrorText)
+        || /exceeded your current quota/.test(normalizedErrorText);
+
+      if (authFailure) {
+        const authError = new Error("鉴权失败，无法完成批量校验。");
+        authError.code = "AUTH";
+        throw authError;
+      }
 
       return {
-        compatible: !endpointMismatch,
+        compatible: response.ok || quotaLike || !endpointMismatch,
+        endpointMismatch,
+        quotaLike,
         response,
         responseText
       };
     }
 
-    async function filterCompatibleChatModelIds(modelIds, apiKey, baseUrl) {
-      const candidateIds = [];
-      const compatibleIds = [];
-      let excludedCount = 0;
-
-      (modelIds || []).forEach((modelId) => {
-        if (!modelId) {
-          return;
-        }
-
-        if (canAttemptChatProbe(modelId)) {
-          candidateIds.push(modelId);
-        } else {
-          excludedCount += 1;
-        }
-      });
-
-      const PROBE_CONCURRENCY = 4;
-      for (let index = 0; index < candidateIds.length; index += PROBE_CONCURRENCY) {
-        const modelChunk = candidateIds.slice(index, index + PROBE_CONCURRENCY);
-        const probeResults = await Promise.all(modelChunk.map(async (modelId) => {
-          try {
-            const result = await probeModel(modelId, apiKey, baseUrl);
-            return { modelId, compatible: result.compatible };
-          } catch (error) {
-            return { modelId, compatible: true, uncertain: true };
-          }
-        }));
-
-        probeResults.forEach((result) => {
-          if (result.compatible) {
-            compatibleIds.push(result.modelId);
-          } else {
-            excludedCount += 1;
-          }
-        });
-      }
-
-      return {
-        modelIds: compatibleIds,
-        excludedCount
-      };
-    }
-
-    function validateSelectedChatModel(modelId, actionLabel = "当前模型") {
+    async function validateSelectedChatModel(modelId, actionLabel = "当前模型", options = {}) {
       const trimmedModelId = String(modelId || "").trim();
       if (!trimmedModelId) {
         addLog(actionLabel + "未填写，请先选择模型。", "error");
         return false;
       }
 
-      if (isExplicitlyUnsupportedModelId(trimmedModelId)) {
-        addLog(
-          actionLabel + "“" + trimmedModelId + "”已知不兼容当前工具的 /chat/completions 工作流，请刷新模型列表后从下拉框选择可用模型。",
-          "error"
-        );
-        return false;
-      }
+      const currentModelOptions = getModelOptionIds();
+      if (!currentModelOptions.includes(trimmedModelId)) {
+        const currentApiKey = String(options.apiKey || settingsApiKey?.value || apiKey || "").trim();
+        const currentBaseUrl = normalizeBaseUrl(options.baseUrl || settingsBaseUrl?.value || baseUrl || "https://api.openai.com/v1");
 
-      const currentBaseUrl = normalizeBaseUrl(settingsBaseUrl?.value || baseUrl || "https://api.openai.com/v1");
-      if (
-        validatedChatModelIds.size > 0
-        && validatedChatModelsBaseUrl
-        && currentBaseUrl === validatedChatModelsBaseUrl
-        && validatedChatModelIds.has(trimmedModelId)
-      ) {
-        return true;
-      }
+        if (!currentApiKey) {
+          addLog(actionLabel + "校验失败：缺少 API Key。", "error");
+          return false;
+        }
 
-      if (
-        validatedChatModelIds.size > 0
-        && validatedChatModelsBaseUrl
-        && currentBaseUrl === validatedChatModelsBaseUrl
-        && !validatedChatModelIds.has(trimmedModelId)
-      ) {
-        addLog(
-          actionLabel + "“" + trimmedModelId + "”未通过当前 Base URL 下的兼容性验证。请刷新模型列表后从下拉框选择可用模型。",
-          "error"
-        );
-        return false;
+        addLog("⏳ 发现未知模型 [" + trimmedModelId + "]，正在自动校验其连通性...", "info");
+
+        try {
+          const probeResult = await probeModel(trimmedModelId, currentApiKey, currentBaseUrl);
+          if (probeResult.compatible) {
+            addModelOption(trimmedModelId);
+            addLog("✅ [" + trimmedModelId + "] 校验通过，已自动放行。", "success");
+            return true;
+          }
+
+          addLog("❌ 自动校验失败：模型 [" + trimmedModelId + "] 不支持当前工具的 Chat 接口，请求已终止。", "error");
+          return false;
+        } catch (error) {
+          addLog("❌ 自动校验失败：模型 [" + trimmedModelId + "] 无法完成连通性探测（" + error.message + "），请求已终止。", "error");
+          return false;
+        }
       }
 
       return true;
@@ -2242,7 +2212,17 @@
         return;
       }
 
-      if (!validateSelectedChatModel(lastTaskSnapshot?.settings?.modelName, taskLabel + "模型")) {
+      activeButton.disabled = true;
+      activeButton.textContent = busyLabel;
+      translateBtn.disabled = true;
+      proofreadBtn.disabled = true;
+      resumeTaskBtn.disabled = true;
+
+      if (!await validateSelectedChatModel(lastTaskSnapshot?.settings?.modelName, taskLabel + "模型", {
+        apiKey: lastTaskSnapshot?.settings?.apiKey,
+        baseUrl: lastTaskSnapshot?.settings?.baseUrl
+      })) {
+        activeButton.textContent = originalButtonLabel;
         clearLastTaskState();
         syncPendingLqaState();
         return;
@@ -3094,7 +3074,9 @@
       settingsModelName.value = modelName;
       settingsDescColumnName.value = descColumnName;
       settingsModelName.placeholder = "请选择或输入模型";
-      renderModelOptions([modelName, "GPT-5.4"]);
+      if (!modelOptions.children.length) {
+        renderModelOptions(["GPT-5.4"]);
+      }
       updateApiKeyVisibility(false);
       updateStepperButtons();
     }
@@ -3156,9 +3138,6 @@
       addLog("正在获取模型列表: " + currentBaseUrl + "/models", "info");
 
       try {
-        validatedChatModelIds = new Set();
-        validatedChatModelsBaseUrl = "";
-
         const response = await fetch(currentBaseUrl + "/models", {
           method: "GET",
           headers: {
@@ -3180,37 +3159,100 @@
         const modelIds = rawModels
           .map((item) => item && item.id ? String(item.id) : "")
           .filter(Boolean);
+        const candidateModelIds = modelIds.filter((modelId) => isLikelyTextModelId(modelId));
 
-        if (!modelIds.length) {
+        if (!candidateModelIds.length) {
           throw new Error("返回结果中没有可用的模型 ID。");
         }
 
-        addLog("正在验证候选模型与 /chat/completions 的兼容性，请稍候...", "info");
-        const { modelIds: compatibleModelIds, excludedCount } = await filterCompatibleChatModelIds(
-          modelIds,
-          currentApiKey,
-          currentBaseUrl
-        );
-        if (!compatibleModelIds.length) {
-          throw new Error("返回结果中没有可用于 /chat/completions 的聊天模型。");
-        }
+        renderModelOptions(candidateModelIds, false);
 
-        validatedChatModelIds = new Set(compatibleModelIds);
-        validatedChatModelsBaseUrl = currentBaseUrl;
-        renderModelOptions(compatibleModelIds);
-        settingsModelName.value = "";
-        settingsModelName.placeholder = "请选择或输入模型";
-        settingsModelName.focus();
-
-        const filteredHint = excludedCount > 0
-          ? "，已自动排除 " + excludedCount + " 个不适用于 /chat/completions 的模型"
+        const filteredCount = modelIds.length - candidateModelIds.length;
+        const filteredHint = filteredCount > 0
+          ? "，已粗略排除 " + filteredCount + " 个明显非文本模型"
           : "";
-        addLog("模型列表刷新成功，共载入 " + compatibleModelIds.length + " 个通过验证的模型" + filteredHint + "。", "success");
+        addLog("模型列表刷新成功，共载入 " + candidateModelIds.length + " 个候选模型" + filteredHint + "。", "success");
       } catch (error) {
         addLog("获取模型列表失败: " + error.message, "error");
       } finally {
         refreshModelsBtn.disabled = false;
         refreshModelsBtn.textContent = "刷新 🔄";
+      }
+    }
+
+    async function verifyAllModels() {
+      const currentApiKey = settingsApiKey.value.trim();
+      const currentBaseUrl = normalizeBaseUrl(settingsBaseUrl.value) || "https://api.openai.com/v1";
+      const candidateModelIds = getModelOptionIds();
+
+      if (!currentApiKey) {
+        addLog("批量校验失败：请先填写 API Key。", "error");
+        return;
+      }
+
+      if (!candidateModelIds.length) {
+        addLog("当前没有可校验的模型候选，请先点击刷新。", "warning");
+        return;
+      }
+
+      const restoreUiState = () => {
+        refreshModelsBtn.disabled = false;
+        verifyModelsBtn.disabled = false;
+        analyzeContextBtn.disabled = false;
+        syncPendingLqaState();
+      };
+
+      refreshModelsBtn.disabled = true;
+      verifyModelsBtn.disabled = true;
+      analyzeContextBtn.disabled = true;
+      translateBtn.disabled = true;
+      proofreadBtn.disabled = true;
+      resumeTaskBtn.disabled = true;
+
+      let completedCount = 0;
+      const totalCount = candidateModelIds.length;
+      const compatibleIds = [];
+
+      try {
+        const PROBE_CONCURRENCY = 4;
+        const PROBE_DELAY_MS = 400;
+
+        for (let index = 0; index < candidateModelIds.length; index += PROBE_CONCURRENCY) {
+          const modelChunk = candidateModelIds.slice(index, index + PROBE_CONCURRENCY);
+          const probeResults = await Promise.all(modelChunk.map(async (modelId) => {
+            try {
+              const result = await probeModel(modelId, currentApiKey, currentBaseUrl);
+              return { modelId, compatible: result.compatible };
+            } catch (error) {
+              return { modelId, error };
+            }
+          }));
+
+          for (const result of probeResults) {
+            completedCount += 1;
+            verifyModelsBtn.textContent = "校验中 (" + completedCount + "/" + totalCount + ")...";
+
+            if (result.error) {
+              throw result.error;
+            }
+
+            if (result.compatible) {
+              compatibleIds.push(result.modelId);
+            }
+          }
+
+          if (index + PROBE_CONCURRENCY < candidateModelIds.length) {
+            await new Promise((resolve) => setTimeout(resolve, PROBE_DELAY_MS));
+          }
+        }
+
+        renderModelOptions(compatibleIds, false);
+        addLog("✅ 批量校验完成，共发现 " + compatibleIds.length + " 个完美兼容当前工具的模型，已更新至列表。", "success");
+      } catch (error) {
+        addLog("批量校验失败：" + error.message + "，已保留当前模型列表。", "error");
+      } finally {
+        verifyModelsBtn.textContent = "批量校验";
+        restoreUiState();
       }
     }
 
@@ -3469,12 +3511,24 @@
         return;
       }
 
-      if (!validateSelectedChatModel(currentModelName, "全文分析模型")) {
+      const originalButtonLabel = analyzeContextBtn.textContent;
+      analyzeContextBtn.disabled = true;
+      analyzeContextBtn.textContent = "分析中...";
+
+      if (!await validateSelectedChatModel(currentModelName, "全文分析模型", {
+        apiKey: currentApiKey,
+        baseUrl: currentBaseUrl
+      })) {
+        analyzeContextBtn.disabled = false;
+        analyzeContextBtn.textContent = originalButtonLabel;
         return;
       }
 
+      analyzeContextBtn.textContent = originalButtonLabel;
+
       const analysisRows = buildAnalysisTextRows(selectedBaseLanguage);
       if (!analysisRows.rows.length) {
+        analyzeContextBtn.disabled = false;
         addLog("当前基准语言列没有可用于分析的文本内容。", "error");
         return;
       }
@@ -3496,7 +3550,6 @@
         + "文本内容如下：\n"
         + analysisRows.rows.join("\n");
 
-      const originalButtonLabel = analyzeContextBtn.textContent;
       analyzeContextBtn.disabled = true;
       analyzeContextBtn.textContent = "分析中...";
       addLog("🚀 正在分析全文剧情，请稍候...（这可能需要几十秒）", "info");
@@ -4404,6 +4457,7 @@
 
     updateApiKeyVisibility(settingsApiKey.type === "password");
     refreshModelsBtn.addEventListener("click", refreshModelList);
+    verifyModelsBtn.addEventListener("click", verifyAllModels);
     if (concurrencyMinusBtn && concurrencyPlusBtn && settingsConcurrencyInput) {
       concurrencyMinusBtn.addEventListener("click", () => {
         const currentValue = normalizeConcurrency(settingsConcurrencyInput.value);
