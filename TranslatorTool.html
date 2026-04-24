@@ -1999,6 +1999,163 @@
       return (url || "").trim().replace(/\/+$/, "");
     }
 
+    let validatedChatModelIds = new Set();
+    let validatedChatModelsBaseUrl = "";
+
+    function isExplicitlyUnsupportedModelId(modelId) {
+      const normalizedModelId = String(modelId || "").trim().toLowerCase();
+      if (!normalizedModelId) {
+        return true;
+      }
+
+      const excludedPatterns = [
+        /-pro($|-)/,
+        /embedding/,
+        /rerank/,
+        /whisper/,
+        /\btts\b/,
+        /transcri/,
+        /speech/,
+        /moderation/,
+        /dall-e/,
+        /image/,
+        /realtime/,
+        /computer-use/,
+        /babbage/,
+        /curie/,
+        /davinci/,
+        /ada/,
+        /instruct/,
+        /omni/
+      ];
+
+      return excludedPatterns.some((pattern) => pattern.test(normalizedModelId));
+    }
+
+    function canAttemptChatProbe(modelId) {
+      const normalizedModelId = String(modelId || "").trim().toLowerCase();
+      if (!normalizedModelId) {
+        return false;
+      }
+
+      return !isExplicitlyUnsupportedModelId(normalizedModelId);
+    }
+
+    async function probeModel(modelId, apiKey, baseUrl) {
+      const response = await fetch(baseUrl + "/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + apiKey
+        },
+        body: JSON.stringify({
+          model: modelId,
+          messages: [
+            { role: "user", content: "." }
+          ],
+          max_tokens: 1
+        })
+      });
+
+      const responseText = await response.text();
+      const normalizedErrorText = String(responseText || "").toLowerCase();
+      const endpointMismatch = response.status === 404
+        || /not a chat model/.test(normalizedErrorText)
+        || /not supported in the v1\/chat\/completions endpoint/.test(normalizedErrorText)
+        || /did you mean to use v1\/completions/.test(normalizedErrorText);
+
+      return {
+        compatible: !endpointMismatch,
+        response,
+        responseText
+      };
+    }
+
+    async function filterCompatibleChatModelIds(modelIds, apiKey, baseUrl) {
+      const candidateIds = [];
+      const compatibleIds = [];
+      let excludedCount = 0;
+
+      (modelIds || []).forEach((modelId) => {
+        if (!modelId) {
+          return;
+        }
+
+        if (canAttemptChatProbe(modelId)) {
+          candidateIds.push(modelId);
+        } else {
+          excludedCount += 1;
+        }
+      });
+
+      const PROBE_CONCURRENCY = 4;
+      for (let index = 0; index < candidateIds.length; index += PROBE_CONCURRENCY) {
+        const modelChunk = candidateIds.slice(index, index + PROBE_CONCURRENCY);
+        const probeResults = await Promise.all(modelChunk.map(async (modelId) => {
+          try {
+            const result = await probeModel(modelId, apiKey, baseUrl);
+            return { modelId, compatible: result.compatible };
+          } catch (error) {
+            return { modelId, compatible: true, uncertain: true };
+          }
+        }));
+
+        probeResults.forEach((result) => {
+          if (result.compatible) {
+            compatibleIds.push(result.modelId);
+          } else {
+            excludedCount += 1;
+          }
+        });
+      }
+
+      return {
+        modelIds: compatibleIds,
+        excludedCount
+      };
+    }
+
+    function validateSelectedChatModel(modelId, actionLabel = "当前模型") {
+      const trimmedModelId = String(modelId || "").trim();
+      if (!trimmedModelId) {
+        addLog(actionLabel + "未填写，请先选择模型。", "error");
+        return false;
+      }
+
+      if (isExplicitlyUnsupportedModelId(trimmedModelId)) {
+        addLog(
+          actionLabel + "“" + trimmedModelId + "”已知不兼容当前工具的 /chat/completions 工作流，请刷新模型列表后从下拉框选择可用模型。",
+          "error"
+        );
+        return false;
+      }
+
+      const currentBaseUrl = normalizeBaseUrl(settingsBaseUrl?.value || baseUrl || "https://api.openai.com/v1");
+      if (
+        validatedChatModelIds.size > 0
+        && validatedChatModelsBaseUrl
+        && currentBaseUrl === validatedChatModelsBaseUrl
+        && validatedChatModelIds.has(trimmedModelId)
+      ) {
+        return true;
+      }
+
+      if (
+        validatedChatModelIds.size > 0
+        && validatedChatModelsBaseUrl
+        && currentBaseUrl === validatedChatModelsBaseUrl
+        && !validatedChatModelIds.has(trimmedModelId)
+      ) {
+        addLog(
+          actionLabel + "“" + trimmedModelId + "”未通过当前 Base URL 下的兼容性验证。请刷新模型列表后从下拉框选择可用模型。",
+          "error"
+        );
+        return false;
+      }
+
+      return true;
+    }
+
     function normalizeConcurrency(value) {
       const parsed = Number(value);
       if (!Number.isFinite(parsed)) {
@@ -2082,6 +2239,12 @@
         clearLastTaskState();
         syncPendingLqaState();
         addLog("当前没有可继续的" + taskLabel + "批次。", "warning");
+        return;
+      }
+
+      if (!validateSelectedChatModel(lastTaskSnapshot?.settings?.modelName, taskLabel + "模型")) {
+        clearLastTaskState();
+        syncPendingLqaState();
         return;
       }
 
@@ -2993,6 +3156,9 @@
       addLog("正在获取模型列表: " + currentBaseUrl + "/models", "info");
 
       try {
+        validatedChatModelIds = new Set();
+        validatedChatModelsBaseUrl = "";
+
         const response = await fetch(currentBaseUrl + "/models", {
           method: "GET",
           headers: {
@@ -3019,12 +3185,27 @@
           throw new Error("返回结果中没有可用的模型 ID。");
         }
 
-        renderModelOptions(modelIds);
+        addLog("正在验证候选模型与 /chat/completions 的兼容性，请稍候...", "info");
+        const { modelIds: compatibleModelIds, excludedCount } = await filterCompatibleChatModelIds(
+          modelIds,
+          currentApiKey,
+          currentBaseUrl
+        );
+        if (!compatibleModelIds.length) {
+          throw new Error("返回结果中没有可用于 /chat/completions 的聊天模型。");
+        }
+
+        validatedChatModelIds = new Set(compatibleModelIds);
+        validatedChatModelsBaseUrl = currentBaseUrl;
+        renderModelOptions(compatibleModelIds);
         settingsModelName.value = "";
         settingsModelName.placeholder = "请选择或输入模型";
         settingsModelName.focus();
 
-        addLog("模型列表刷新成功，共载入 " + modelIds.length + " 个模型。", "success");
+        const filteredHint = excludedCount > 0
+          ? "，已自动排除 " + excludedCount + " 个不适用于 /chat/completions 的模型"
+          : "";
+        addLog("模型列表刷新成功，共载入 " + compatibleModelIds.length + " 个通过验证的模型" + filteredHint + "。", "success");
       } catch (error) {
         addLog("获取模型列表失败: " + error.message, "error");
       } finally {
@@ -3285,6 +3466,10 @@
       const { apiKey: currentApiKey, baseUrl: currentBaseUrl, modelName: currentModelName } = getAnalysisSettings();
       if (!currentApiKey) {
         addLog("请先在偏好设置中填写 API Key，再进行全文分析。", "error");
+        return;
+      }
+
+      if (!validateSelectedChatModel(currentModelName, "全文分析模型")) {
         return;
       }
 
