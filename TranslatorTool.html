@@ -1716,6 +1716,10 @@
       return headers.find((header) => String(header ?? "").trim().toLowerCase() === normalizedExpected) || "";
     }
 
+    function findKeyColumnName(headers = csvHeaders) {
+      return headers.find((header) => String(header ?? "").trim().toLowerCase() === "key") || "";
+    }
+
     function buildContextString(endRow, targetLangs, depth) {
       if (depth <= 0 || endRow <= 0) {
         return "";
@@ -1750,6 +1754,45 @@
       });
 
       return result;
+    }
+
+    function buildReadonlyContextRows(endRow, targetLangs, depth) {
+      if (depth <= 0 || endRow <= 0) {
+        return [];
+      }
+
+      const startRow = Math.max(0, endRow - depth);
+      const currentDescCol = findDescColumnName(csvHeaders);
+      const keyColumn = findKeyColumnName(csvHeaders);
+      const rows = [];
+
+      window.csvData.slice(startRow, endRow).forEach((row, offset) => {
+        const rowIndex = startRow + offset;
+        const baseText = String(row?.[selectedBaseLanguage] ?? "");
+        if (!baseText.trim()) {
+          return;
+        }
+
+        const currentTranslations = {};
+        (targetLangs || []).forEach((lang) => {
+          const text = String(row?.[lang] ?? "");
+          if (text.trim()) {
+            currentTranslations[lang] = text;
+          }
+        });
+
+        rows.push({
+          role: "readonly_context",
+          row: rowIndex,
+          lineNumber: rowIndex + 1,
+          key: keyColumn ? String(row?.[keyColumn] ?? "") : "",
+          desc: currentDescCol ? String(row?.[currentDescCol] ?? "") : "",
+          baseText,
+          currentTranslations
+        });
+      });
+
+      return rows;
     }
 
     function buildLqaLogHtml(row, lang, note) {
@@ -2717,6 +2760,7 @@
 
     function buildProofreadJobs(targetLangs, options = {}) {
       const currentDescColumnName = findDescColumnName(csvHeaders);
+      const keyColumnName = findKeyColumnName(csvHeaders);
       const jobs = [];
       const shouldSkipFrozen = Boolean(options?.lqaFreezeEnabled);
       let skippedFrozenCells = 0;
@@ -2749,7 +2793,10 @@
         }
 
         jobs.push({
+          role: "target",
           row: index,
+          lineNumber: index + 1,
+          key: keyColumnName ? String(row?.[keyColumnName] ?? "") : "",
           desc: descText,
           baseText,
           currentTranslations
@@ -3268,11 +3315,21 @@
       const contextString = deepMode
         ? buildContextString(batchData?.[0]?.row ?? 0, deepTargetLangs, settings.contextDepth)
         : "";
+      const readonlyContextRows = deepMode
+        ? buildReadonlyContextRows(batchData?.[0]?.row ?? 0, deepTargetLangs, settings.contextDepth)
+        : [];
+      const proofreadPayload = {
+        readonlyContext: readonlyContextRows,
+        targets: batchData
+      };
       const lqaOutputContract = "【两阶段判定输出】：你必须先判断 issueType 与 severity，再决定 shouldApply，不能直接为了润色而改写。\n"
         + "完全合格的行不要返回；仅风格偏好、语序优化、同义词替换、语气微调必须视为 style_only/suggestion，并且 shouldApply=false。\n"
         + "只有客观且严重的问题才允许 shouldApply=true：issueType 必须是 tag_mismatch、placeholder_mismatch、newline_mismatch、omission、mistranslation、terminology、context_consistency 或 punctuation_pollution，severity 必须是 critical 或 major。\n"
         + "newText 必须是该语言单元格的完整替换译文，不是局部补丁；shouldApply=false 时 newText 必须为空字符串。\n"
         + "reason 必须使用简体中文说明，不允许使用目标语言或英文整句解释；术语、Key、原文片段和译文片段可以保留原文。\n"
+        + "输入数据中 row 是内部索引，lineNumber 是界面显示行号；返回 findings 时必须使用 targets 中的 row。\n"
+        + "readonlyContext 只可作为术语、语气和前文顺序参考，绝对禁止返回 readonlyContext 的修改；targets 才是允许检查和返回修改的行。\n"
+        + "当术语冲突且没有更强证据时，优先沿用更早 lineNumber 中已经稳定出现的译法，禁止为了匹配后文而反向修改前文。\n"
         + "返回 JSON 顶层必须是 {\"findings\": []}。finding 字段：row（原始行索引）、lang、issueType、severity、shouldApply、newText、reason。\n";
       const userPrompt = deepMode
         ? "你是极其严苛且极其克制的游戏 LQA 专家。当前处于【深度剧情监督模式】。\n"
@@ -3295,7 +3352,7 @@
           + "  4. 排版污染：混用了中西文标点，或违背了目标语言专属排版（如法语漏掉标点前空格、西语漏掉倒标点、引文符号错误等）。\n"
           + lqaOutputContract
           + "待校对数据：\n"
-          + JSON.stringify(batchData)
+          + JSON.stringify(proofreadPayload)
         : "你是极其专业且极其克制的游戏 LQA 质检专家。请对比 'baseText' 和 'currentTranslations'，并严格遵守 System 设定的背景与语气。\n"
           + "【最高禁令】：如果没有客观的致命错误（如漏翻、错翻、违背术语表、代码标签丢失、占位符或换行丢失、严重排版污染、明确违背背景设定），绝对禁止仅仅为了修改语序、同义词替换或觉得“不够地道”而触发修改！宁可不改，绝不瞎改！对于质量及格的翻译，绝对不要包含在返回的 JSON 中！\n"
           + "【绝对基准】：必须且只能以 'baseText' 为唯一基准进行 1对1 校验，禁止外语之间互相干涉！\n"
@@ -3313,7 +3370,7 @@
           + "  3. 排版污染：目标语言为西欧语言时，错误残留了中文全角标点（如全角括号、引号），或违背了目标语言专属排版。\n"
           + lqaOutputContract
           + "待校对数据如下：\n"
-          + JSON.stringify(batchData);
+          + JSON.stringify(proofreadPayload);
       const controller = createRequestAbortController();
 
       try {
