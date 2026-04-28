@@ -21,11 +21,11 @@
 | 1 | `LQA/PASS/EN/Correct` | English | 不修改 | 无问题 |
 | 2 | `LQA/PASS/EN/StyleOnly` | English | 不修改 | 只是风格优化，应该忽略 |
 | 3 | `LQA/PASS/EN/LocalizedPunctuation` | English | 不修改 | 英文标点已经本地化正确 |
-| 4 | `LQA/FIX/EN/TagMissing` | English | 应修复，保留 `<color=yellow>{0}</color>` | 富文本标签不一致 |
-| 5 | `LQA/FIX/EN/PlaceholderMissing` | English | 应修复，补回 `{0}` | 占位符不一致 |
-| 6 | `LQA/FIX/EN/NamedPlaceholderMissing` | English | 应修复，补回 `{player}` | 占位符不一致 |
-| 7 | `LQA/FIX/EN/PrintfMissing` | English | 应修复，同时保留 `%s` 和 `%d` | 占位符不一致 |
-| 8 | `LQA/FIX/EN/NewlineMismatch` | English | 应修复，保留 `\n\n` | 换行符不一致 |
+| 4 | `LQA/FIX/EN/TagMissing` | English | 本地格式预扫描标记，并要求模型合并修复；若模型没修好则进入审阅提醒 | 富文本标签不一致 |
+| 5 | `LQA/FIX/EN/PlaceholderMissing` | English | 本地格式预扫描标记，并要求模型合并修复；若模型没修好则进入审阅提醒 | 占位符不一致 |
+| 6 | `LQA/FIX/EN/NamedPlaceholderMissing` | English | 本地格式预扫描标记，并要求模型合并修复；若模型没修好则进入审阅提醒 | 占位符不一致 |
+| 7 | `LQA/FIX/EN/PrintfMissing` | English | 本地格式预扫描标记，并要求模型合并修复；若模型没修好则进入审阅提醒 | 占位符不一致 |
+| 8 | `LQA/FIX/EN/NewlineMismatch` | English | 本地格式预扫描标记，并要求模型合并修复；若模型没修好则进入审阅提醒 | 换行符不一致 |
 | 9 | `LQA/FIX/EN/Omission` | English | 应修复，译文需要包含“打开地下室的门” | 漏译 |
 | 10 | `LQA/FIX/EN/MistranslationOpposite` | English | 应修复，不能把“不要按”翻成“按下” | 错译 |
 | 11 | `LQA/CTX/EN/StableTerm_BlackStoneBracelet` | English | 不修改 | 术语种子行 |
@@ -38,7 +38,7 @@
 | 18 | `LQA/FIX/JA/Terminology_Alice` | Japanese | 应修复，应使用 `アリス`，不要用 `アリサ` | 术语不一致 |
 | 19 | `LQA/CTX/JA/StableTerm_OnDesk` | Japanese | 不修改 | 上下文种子行 |
 | 20 | `LQA/FIX/JA/Context_OnDesk` | Japanese | 应修复，应沿用前文 `机の上`，不要改成 `テーブルの上` | 上下文不一致 |
-| 21 | `LQA/FIX/JA/NewlineMismatch` | Japanese | 应修复，保留 `\n\n` | 换行符不一致 |
+| 21 | `LQA/FIX/JA/NewlineMismatch` | Japanese | 本地格式预扫描标记，并要求模型合并修复；若模型没修好则进入审阅提醒 | 换行符不一致 |
 | 22 | `LQA/PASS/JA/CorrectJapaneseQuotes` | Japanese | 不修改 | 日语引号已经正确 |
 | 23 | `LQA/PASS/RU/CorrectGuillemets` | Russian | 不修改 | 俄语角引号已经正确 |
 | 24 | `LQA/FIX/RU/PunctuationPollution` | Russian | 应修复，把 `？` 改成 `?` | 标点污染 |
@@ -46,8 +46,10 @@
 ## 通过标准
 
 - 所有 `PASS` 行不应进入审阅弹窗。
-- 所有 `FIX` 行应该进入审阅弹窗，或者被硬校验明确拦截并写入日志。
+- 所有 `FIX` 行应该进入审阅弹窗，或者被本地格式预扫描/硬校验明确拦截并写入日志。
 - LQA 日志里的问题标签应显示中文，例如 `[重要 / 术语不一致]`。
 - 日志里的修改原因应尽量使用中文说明。
-- 硬校验必须阻止会丢失富文本标签、占位符、printf token 或必要换行符的修改。
+- 本地格式预扫描必须提前发现富文本标签、占位符、printf token 或必要换行符不一致的单元格，并把这些信息随校对请求发给模型合并修复。
+- 如果模型未返回有效修复，或返回结果仍不满足硬格式校验，该单元格必须进入审阅提醒。
+- 硬校验必须阻止模型提交会丢失富文本标签、占位符、printf token 或必要换行符的修改。
 - 开启冻结功能并保存修改后，再次校对同一份未改动数据，不应对已确认单元格产生新修改。
