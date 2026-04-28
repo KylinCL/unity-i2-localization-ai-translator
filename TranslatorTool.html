@@ -1495,6 +1495,24 @@
       "no_issue"
     ];
     const LQA_SEVERITIES = ["critical", "major", "minor", "suggestion"];
+    const LQA_ISSUE_TYPE_LABELS = {
+      tag_mismatch: "富文本标签不一致",
+      placeholder_mismatch: "占位符不一致",
+      newline_mismatch: "换行符不一致",
+      omission: "漏译",
+      mistranslation: "错译",
+      terminology: "术语不一致",
+      context_consistency: "上下文不一致",
+      punctuation_pollution: "标点污染",
+      style_only: "仅风格建议",
+      no_issue: "无问题"
+    };
+    const LQA_SEVERITY_LABELS = {
+      critical: "严重",
+      major: "重要",
+      minor: "轻微",
+      suggestion: "建议"
+    };
     const LQA_AUTO_APPLY_ISSUE_TYPES = new Set([
       "tag_mismatch",
       "placeholder_mismatch",
@@ -2916,8 +2934,10 @@
     function formatLqaFindingReason(finding) {
       const issueType = String(finding?.issueType || "unknown");
       const severity = String(finding?.severity || "unknown");
+      const issueLabel = LQA_ISSUE_TYPE_LABELS[issueType] || issueType;
+      const severityLabel = LQA_SEVERITY_LABELS[severity] || severity;
       const reason = String(finding?.reason || "").trim();
-      return "[" + severity + " / " + issueType + "] " + (reason || "模型未说明原因");
+      return "[" + severityLabel + " / " + issueLabel + "] " + (reason || "模型未说明原因");
     }
 
     function normalizeProofreadResultMap(batchData, parsedResult, batchNumber, totalBatches) {
@@ -3252,6 +3272,7 @@
         + "完全合格的行不要返回；仅风格偏好、语序优化、同义词替换、语气微调必须视为 style_only/suggestion，并且 shouldApply=false。\n"
         + "只有客观且严重的问题才允许 shouldApply=true：issueType 必须是 tag_mismatch、placeholder_mismatch、newline_mismatch、omission、mistranslation、terminology、context_consistency 或 punctuation_pollution，severity 必须是 critical 或 major。\n"
         + "newText 必须是该语言单元格的完整替换译文，不是局部补丁；shouldApply=false 时 newText 必须为空字符串。\n"
+        + "reason 必须使用简体中文说明，不允许使用目标语言或英文整句解释；术语、Key、原文片段和译文片段可以保留原文。\n"
         + "返回 JSON 顶层必须是 {\"findings\": []}。finding 字段：row（原始行索引）、lang、issueType、severity、shouldApply、newText、reason。\n";
       const userPrompt = deepMode
         ? "你是极其严苛且极其克制的游戏 LQA 专家。当前处于【深度剧情监督模式】。\n"
