@@ -1,3 +1,4 @@
 *.csv.txt
 *csv*.txt
 *.txt
+!LQA_Regression_Sample.csv.txt
