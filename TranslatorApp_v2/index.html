@@ -1,0 +1,275 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game CSV Translator Tool</title>
+  <script src="../vendor/papaparse.min.js"></script>
+  <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-copy">
+          <h1>Game CSV Translator Workbench</h1>
+          <p>AI 驱动的本地化翻译与 LQA 引擎</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div id="tokenLabel" class="token-pill">🪙 Token 消耗: 0</div>
+        <button id="settingsBtn" class="settings-btn" type="button">⚙️ 偏好设置</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="sidebar">
+        <div class="panel">
+          <div class="panel-header">
+            <h2>背景设定</h2>
+            <span>System Prompt</span>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div id="systemPromptPreview" class="prompt-preview empty">尚未填写游戏背景或翻译上下文。点击下方按钮后，可在二级窗口中集中编辑设定内容。</div>
+              <div class="prompt-actions">
+                <button id="editPromptBtn" class="ghost" type="button">编辑背景设定</button>
+                <div id="promptMeta" class="file-meta">0 chars</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>&#x6587;&#x4EF6;&#x4E0E;&#x8BED;&#x8A00;</h2>
+            <span>CSV Input</span>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="field-group">
+                <label for="csvFileInput">CSV / TXT &#x6587;&#x4EF6;</label>
+                <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="&#x62D6;&#x62FD;&#x6216;&#x70B9;&#x51FB;&#x4E0A;&#x4F20; CSV/TXT &#x6587;&#x4EF6;">
+                  <input id="csvFileInput" class="hidden-file-input" type="file" accept=".csv,.txt,text/csv,text/plain">
+                  <div class="drop-zone-copy">
+                    <div class="drop-zone-title">&#x62D6;&#x62FD;&#x6587;&#x4EF6;&#x5230;&#x8FD9;&#x91CC;&#xFF0C;&#x6216;&#x70B9;&#x51FB;&#x9009;&#x62E9;&#x6587;&#x4EF6;</div>
+                    <div class="drop-zone-subtitle">&#x652F;&#x6301; <code>.csv</code>&#x3001;<code>.txt</code> &#x4EE5;&#x53CA;&#x7C7B;&#x4F3C; <code>Localization.csv.txt</code> &#x7684;&#x6587;&#x4EF6;&#x540D;&#x3002;&#x62D6;&#x5165;&#x540E;&#x4F1A;&#x7ACB;&#x523B;&#x89E3;&#x6790;&#x5E76;&#x5237;&#x65B0;&#x53F3;&#x4FA7;&#x9884;&#x89C8;&#x3002;</div>
+                  </div>
+                  <div class="file-row">
+                    <label class="file-input" for="csvFileInput"><span>&#x9009;&#x62E9;&#x6587;&#x4EF6;</span></label>
+                    <div id="fileMeta" class="file-meta">&#x672A;&#x9009;&#x62E9;&#x6587;&#x4EF6;</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="section-divider"></div>
+
+              <div class="field-group">
+                <label>&#x8BED;&#x8A00;&#x914D;&#x7F6E;</label>
+                <div class="language-config-card">
+                  <div id="languageConfigContainer" class="language-config-scroll">
+                    <div class="language-placeholder">&#x8BF7;&#x5148;&#x4E0A;&#x4F20;&#x6587;&#x4EF6;&#x4EE5;&#x9009;&#x62E9;&#x8BED;&#x8A00;&#x3002;</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel sticky-action-panel">
+          <div class="panel-header">
+            <h2>🚀 执行引擎</h2>
+            <span>Actions</span>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="analysis-button-wrap">
+                <button id="analyzeContextBtn" class="analysis-btn" type="button">🔍 分析全文背景</button>
+                <div class="subhint">会基于“基准语言”列遍历全文内容，自动沉淀世界观、人物语气与本地化规则。</div>
+                <div id="selectionSummary" class="subhint selection-summary">当前已选中 0 / 0 行</div>
+              </div>
+
+              <div class="controls">
+                <div class="radio-group" role="radiogroup" aria-label="翻译模式">
+                  <label class="radio-card"><input type="radio" name="mode" value="translate-empty" checked><span>仅翻译空白</span></label>
+                  <label class="radio-card"><input type="radio" name="mode" value="force-overwrite"><span>强制覆写</span></label>
+                </div>
+                <label class="checkbox-item" style="width: 100%; margin-bottom: 8px;">
+                  <input type="checkbox" id="deepLqaModeToggle">
+                  <span>💎 深度精修模式 (单语种 + 饱和上下文，专治名词不统一)</span>
+                </label>
+                <div class="button-group">
+                  <button id="resumeTaskBtn" class="ghost hidden" type="button">⏯️ 继续未完成</button>
+                  <button id="translateBtn" class="primary" type="button">开始翻译</button>
+                  <button id="stopTranslateBtn" class="stop-btn hidden" type="button">🛑 停止翻译</button>
+                  <button id="proofreadBtn" class="secondary" type="button">开始校对</button>
+                  <button id="commitBtn" class="commit-btn hidden" type="button">💾 审阅并保存</button>
+                  <button id="exportBtn" class="ghost" type="button">导出 CSV</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="content">
+        <div class="preview-layout">
+          <div class="panel table-panel">
+            <div class="panel-header">
+              <h2>📊 数据工作区 (Workspace)</h2>
+              <div class="stats-strip">
+                <span id="rowCountChip" class="stat-chip">Rows: 0</span>
+                <span id="columnCountChip" class="stat-chip">Columns: 0</span>
+              </div>
+            </div>
+            <div id="tableWrap" class="table-wrap">
+              <div class="placeholder">
+                <div class="placeholder-card">
+                  <strong>等待 CSV 文件</strong>
+                  上传或拖拽带表头的 CSV/TXT 文件后，这里会显示可滚动预览表格。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel log-panel">
+            <div class="panel-header">
+              <h2>📟 运行终端 (Terminal)</h2>
+              <div class="terminal-tools">
+                <span>AI Notes / Runtime Log</span>
+                <button id="clearLogBtn" class="log-clear-btn" type="button" title="清空运行终端">🗑️</button>
+              </div>
+            </div>
+            <div id="logView" class="log-view"></div>
+            <button id="logScrollTip" class="log-scroll-tip" type="button">有新日志 ⬇️</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="promptModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-card prompt-modal-card" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="promptModalTitle" class="modal-title">背景设定</h2>
+          <div class="modal-subtitle">在这里集中维护世界观、角色语气、术语约束与翻译上下文。分析全文后生成的摘要也会写入这里。</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="field-group">
+          <label for="systemPrompt">游戏背景 / 翻译上下文</label>
+          <textarea id="systemPrompt" placeholder="例如：这是一款悬疑解谜游戏，整体语气需要保留压迫感、悬疑感与角色个性，UI 文案保持简洁统一。&#10;&#10;【强制术语表】&#10;- Mystery Case = 神秘案件&#10;- Black Stone = 黑石（禁止译为黑色石头）"></textarea>
+          <div class="hint">这里会作为翻译与 LQA 的统一上下文底稿，建议长期维护并持续迭代。</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="promptCancelBtn" class="ghost" type="button">取消</button>
+        <button id="promptSaveBtn" class="primary" type="button">保存并关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settingsModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-card settings-modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="settingsTitle" class="modal-title">偏好设置</h2>
+          <div class="modal-subtitle">本地保存 API 连接与执行参数，供翻译、LQA 与全文分析统一复用。</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-field-grid">
+          <div class="field-group settings-field-card">
+            <label for="settingsApiKey">API Key</label>
+            <div class="input-with-action">
+              <div class="input-shell">
+                <input id="settingsApiKey" type="password" placeholder="输入 API Key">
+                <button id="toggleApiKeyVisibilityBtn" class="input-action-btn" type="button" aria-label="显示 API Key" title="显示 API Key">👁️</button>
+              </div>
+            </div>
+          </div>
+          <div class="field-group settings-field-card">
+            <label for="settingsBaseUrl">Base URL</label>
+            <input id="settingsBaseUrl" type="text" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1">
+            <div class="hint settings-help-text">处理商业机密文本时，请只使用可信 API 地址；第三方中转站可能记录 API Key 与待翻译文本。</div>
+          </div>
+          <div class="field-group settings-field-card">
+            <label for="settingsConcurrency">并发请求数</label>
+            <div class="stepper-control">
+              <button type="button" class="stepper-btn" id="concurrencyMinus">-</button>
+              <input id="settingsConcurrency" class="stepper-input" type="number" min="1" max="20" value="5" placeholder="5">
+              <button type="button" class="stepper-btn" id="concurrencyPlus">+</button>
+            </div>
+            <p class="setting-remark">
+              设定可同时向模型发起的 API 请求数量。<br>
+              建议范围: <strong>1 ~ 20</strong> (默认值: 5)<br>
+              <span class="warning-text">⚠️ 提示: 过高的并发设置极易导致 API 触发频率限制 (Rate Limit) 报错。</span>
+            </p>
+          </div>
+          <div class="field-group settings-field-card">
+            <label for="settingsContextDepth">上下文回溯行数 (Context Depth)</label>
+            <input id="settingsContextDepth" type="number" min="0" value="50" placeholder="50">
+            <div class="hint settings-help-text">仅对普通翻译与深度精修（Deep LQA）生效，普通校对模式不会注入前文上下文。</div>
+          </div>
+        </div>
+
+        <div class="modal-field-grid">
+          <div class="field-group settings-field-card settings-field-full">
+            <label for="settingsModelName">模型名称</label>
+            <div class="model-input-row">
+              <input id="settingsModelName" type="text" list="modelOptions" value="GPT-5.4" placeholder="请选择或输入模型">
+              <datalist id="modelOptions">
+                <option value="GPT-5.4"></option>
+              </datalist>
+              <button id="refreshModelsBtn" class="refresh-btn" type="button">刷新 🔄</button>
+              <button id="verifyModelsBtn" class="refresh-btn" type="button">批量校验</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-group settings-field-card settings-field-full">
+          <label for="settingsDescColumnName">Desc 列字段名</label>
+          <input id="settingsDescColumnName" type="text" value="Desc" placeholder="例如：Desc">
+          <div class="hint settings-help-text">用于指定哪一列作为语气与上下文参考来源，默认会使用 <code>Desc</code>。</div>
+        </div>
+
+        <div class="field-group settings-field-card settings-field-full">
+          <label class="checkbox-setting" for="settingsFreezeConfirmedLqa">
+            <input id="settingsFreezeConfirmedLqa" type="checkbox">
+            <span>保存 LQA 后冻结已确认单元格</span>
+          </label>
+          <div class="hint settings-help-text">开启后，确认保存的 LQA 单元格会跳过后续校对；当原文或当前译文变化时会自动重新进入校对。</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="settingsClearStorageBtn" class="ghost" type="button">清空本地缓存</button>
+        <button id="settingsCancelBtn" class="ghost" type="button">取消</button>
+        <button id="settingsSaveBtn" class="primary" type="button">保存并关闭</button>
+      </div>
+    </div>
+  </div>
+  <div id="commitModal" class="modal-backdrop" aria-hidden="true" data-modal="commit-review">
+    <div class="modal-card commit-modal-card" role="dialog" aria-modal="true" aria-labelledby="commitModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="commitModalTitle" class="modal-title">审阅修改</h2>
+          <div class="modal-subtitle">确认本轮 LQA 修改后，这些变更会被固化为最终结果，并清理历史记录。</div>
+        </div>
+        <button id="commitCloseBtn" class="commit-close-btn" type="button" aria-label="关闭审阅弹窗" title="关闭">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="commitSummaryContent" class="commit-summary-list" aria-live="polite"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="commitRevertAllBtn" class="stop-btn" type="button" style="margin-right: auto;">🗑️ 放弃全部修改</button>
+        <button id="commitCancelBtn" class="ghost" type="button">取消</button>
+        <button id="commitConfirmBtn" class="primary" type="button">确认保存</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
+
