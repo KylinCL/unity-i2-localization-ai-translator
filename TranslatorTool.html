@@ -2912,10 +2912,12 @@
                     issueType: { type: "string", enum: LQA_ISSUE_TYPES },
                     severity: { type: "string", enum: LQA_SEVERITIES },
                     shouldApply: { type: "boolean" },
+                    evidence: { type: "string" },
+                    decision: { type: "string" },
                     newText: { type: "string" },
                     reason: { type: "string" }
                   },
-                  required: ["row", "lang", "issueType", "severity", "shouldApply", "newText", "reason"]
+                  required: ["row", "lang", "issueType", "severity", "shouldApply", "evidence", "decision", "newText", "reason"]
                 }
               }
             },
@@ -2942,11 +2944,44 @@
     }
 
     function extractNewlineTokens(value) {
-      return extractRegexMatches(value, /\\n|\r\n|\r|\n/g).map((token) => token === "\r\n" || token === "\r" ? "\n" : token);
+      return extractRegexMatches(value, /\\r\\n|\\n|\\r|\r\n|\r|\n/g).map((token) => token === "\r\n" || token === "\r" ? "\n" : token);
+    }
+
+    function getPreferredNewlineToken(value) {
+      const match = String(value ?? "").match(/\\r\\n|\\n|\\r|\r\n|\r|\n/);
+      return match ? match[0] : "";
+    }
+
+    function normalizeNewlineRepresentationToBase(baseText, candidateText) {
+      const preferredToken = getPreferredNewlineToken(baseText);
+      if (!preferredToken) {
+        return String(candidateText ?? "");
+      }
+
+      return String(candidateText ?? "").replace(/\\r\\n|\\n|\\r|\r\n|\r|\n/g, preferredToken);
+    }
+
+    function formatTokenForLog(token) {
+      switch (token) {
+        case "\n":
+          return "实际换行";
+        case "\r\n":
+          return "实际 CRLF";
+        case "\r":
+          return "实际 CR";
+        case "\\n":
+          return "\\n";
+        case "\\r\\n":
+          return "\\r\\n";
+        case "\\r":
+          return "\\r";
+        default:
+          return token;
+      }
     }
 
     function formatTokenList(tokens) {
-      return tokens.length ? tokens.join(" ") : "无";
+      return tokens.length ? tokens.map(formatTokenForLog).join(" ") : "无";
     }
 
     function compareTokenSequence(label, expected, actual) {
@@ -3011,8 +3046,18 @@
       const severity = String(finding?.severity || "unknown");
       const issueLabel = LQA_ISSUE_TYPE_LABELS[issueType] || issueType;
       const severityLabel = LQA_SEVERITY_LABELS[severity] || severity;
+      const evidence = String(finding?.evidence || "").trim();
+      const decision = String(finding?.decision || "").trim();
       const reason = String(finding?.reason || "").trim();
-      return "[" + severityLabel + " / " + issueLabel + "] " + (reason || "模型未说明原因");
+      const parts = [];
+      if (evidence) {
+        parts.push("证据：" + evidence);
+      }
+      if (decision) {
+        parts.push("判定：" + decision);
+      }
+      parts.push("说明：" + (reason || "模型未说明原因"));
+      return "[" + severityLabel + " / " + issueLabel + "] " + parts.join("；");
     }
 
     function normalizeProofreadResultMap(batchData, parsedResult, batchNumber, totalBatches) {
@@ -3049,7 +3094,8 @@
           return;
         }
 
-        const validation = validateProofreadCandidate(item, lang, finding?.newText);
+        const normalizedNewText = normalizeNewlineRepresentationToBase(item?.baseText ?? "", finding?.newText);
+        const validation = validateProofreadCandidate(item, lang, normalizedNewText);
         if (!validation.ok) {
           blockedReasons.push("行 " + (row + 1) + " / " + lang + ": " + validation.reason);
           return;
@@ -3059,7 +3105,7 @@
           resultMap[row] = { _notes: {} };
         }
 
-        resultMap[row][lang] = String(finding.newText);
+        resultMap[row][lang] = normalizedNewText;
         resultMap[row]._notes[lang] = formatLqaFindingReason(finding);
       });
 
@@ -3385,30 +3431,33 @@
         readonlyContext: readonlyContextRows,
         targets: batchData
       };
-      const lqaOutputContract = "【两阶段判定输出】：你必须先判断 issueType 与 severity，再决定 shouldApply，不能直接为了润色而改写。\n"
-        + "完全合格的行不要返回；仅风格偏好、语序优化、同义词替换、语气微调必须视为 style_only/suggestion，并且 shouldApply=false。\n"
-        + "只有客观且严重的问题才允许 shouldApply=true：issueType 必须是 tag_mismatch、placeholder_mismatch、newline_mismatch、omission、mistranslation、terminology、context_consistency 或 punctuation_pollution，severity 必须是 critical 或 major。\n"
-        + "targets 中可能包含 preScanIssues：这是程序本地已确认的硬格式问题。对应语言必须优先检查并修复；如果同一单元格同时存在漏译、错译或术语错误，newText 必须一次性合并修复格式和文本问题。\n"
-        + "遇到 preScanIssues 时，不能只解释问题，也不能只修文本；newText 必须是该语言单元格的完整替换译文，并确保富文本标签、占位符、printf token、换行符与 baseText 100% 对齐。\n"
+      const lqaOutputContract = "【判定与输出流程】：按顺序处理每个 target/lang。\n"
+        + "1. 硬格式：先检查 preScanIssues、富文本标签、占位符、printf token、换行符是否与 baseText 对齐。\n"
+        + "2. 文本语义：再检查漏译、错译、语义相反、角色/物品/命令理解错误。\n"
+        + "3. 术语与上下文：结合 System 术语和 readonlyContext，检查专名、称谓、前后一致性。\n"
+        + "4. 目标语言排版：最后检查中文全角标点污染、法语空格、西语倒标点、引号规范等排版问题。\n"
+        + "5. 决策：只有客观且严重的问题才允许 shouldApply=true；issueType 必须是 tag_mismatch、placeholder_mismatch、newline_mismatch、omission、mistranslation、terminology、context_consistency 或 punctuation_pollution，severity 必须是 critical 或 major。\n"
+        + "6. 跳过：完全合格的行不要返回；仅风格偏好、语序优化、同义词替换、语气微调必须视为 style_only/suggestion，并且 shouldApply=false。\n"
+        + "targets 中的 preScanIssues 是程序本地已确认的硬格式问题。对应语言必须优先处理；如果同一单元格同时存在漏译、错译或术语错误，newText 必须一次性合并修复格式和文本问题。\n"
         + "newText 必须是该语言单元格的完整替换译文，不是局部补丁；shouldApply=false 时 newText 必须为空字符串。\n"
-        + "reason 必须使用简体中文说明，不允许使用目标语言或英文整句解释；术语、Key、原文片段和译文片段可以保留原文。\n"
+        + "每条 finding 必须填写 evidence 与 decision。evidence 只写可核验证据（如缺少 {0}、漏掉“地下室”、与第 17 行术语不一致），decision 只写处理结论（如应补回占位符并保留语义）。两者都必须是简体中文短句，不得输出长篇推理或思维链。\n"
+        + "reason 是给用户看的最终说明，必须使用简体中文；术语、Key、原文片段和译文片段可以保留原文。\n"
         + "输入数据中 row 是内部索引，lineNumber 是界面显示行号；返回 findings 时必须使用 targets 中的 row。\n"
-        + "readonlyContext 只可作为术语、语气和前文顺序参考，绝对禁止返回 readonlyContext 的修改；targets 才是允许检查和返回修改的行。\n"
-        + "当术语冲突且没有更强证据时，优先沿用更早 lineNumber 中已经稳定出现的译法，禁止为了匹配后文而反向修改前文。\n"
-        + "返回 JSON 顶层必须是 {\"findings\": []}。finding 字段：row（原始行索引）、lang、issueType、severity、shouldApply、newText、reason。\n";
+        + "readonlyContext 只可作为术语、语气和前文顺序参考；只有 targets 中的行可以返回 finding。\n"
+        + "当术语冲突且没有更强证据时，优先沿用更早 lineNumber 中已经稳定出现的译法。\n"
+        + "返回 JSON 顶层必须是 {\"findings\": []}。finding 字段：row（原始行索引）、lang、issueType、severity、shouldApply、evidence、decision、newText、reason。\n";
       const userPrompt = deepMode
         ? "你是极其严苛且极其克制的游戏 LQA 专家。当前处于【深度剧情监督模式】。\n"
-          + "【最高禁令】：如果没有客观的致命错误（如漏翻、错翻、违背术语表、代码标签丢失、占位符或换行丢失、严重排版污染、明确违背背景设定），绝对禁止仅仅为了修改语序、同义词替换或觉得“不够地道”而触发修改！宁可不改，绝不瞎改！对于质量及格的翻译，绝对不要包含在返回的 JSON 中！\n"
-          + "【只读上下文规则】：输入 JSON 中的 readonlyContext 仅用于理解前文、术语、称谓和既有译法；绝对不准对 readonlyContext 返回修改，只有 targets 中的行可以返回 finding。\n"
-          + "【代码与格式绝对保留】：富文本标签（如 <color>）、占位符（如 {0}）与换行符（\\n）必须与原文 100% 对齐。禁止丢失、禁止随意增减、禁止改写顺序。\n"
-          + "【排版本地化强制规范】：必须严格遵循目标语言母语排版，严禁跨语种标点污染！\n"
-          + "  - 半角隔离：English, French, Spanish, German, Portuguese, Russian, Italian 必须使用纯半角标点（如 , . ! ? ()），绝对禁止混入中文全角标点！\n"
+          + "【工作目标】：只处理客观可证明的 LQA 问题，例如漏翻、错翻、术语冲突、代码格式丢失、严重排版污染或明确违背背景设定。质量合格的译文不要返回 finding。\n"
+          + "【只读上下文规则】：输入 JSON 中的 readonlyContext 仅用于理解前文、术语、称谓和既有译法；只有 targets 中的行可以返回 finding。\n"
+          + "【硬格式约束】：富文本标签（如 <color>）、占位符（如 {0}）与换行符（\\n）必须与原文 100% 对齐。\n"
+          + "【排版本地化规范】：必须遵循目标语言母语排版，避免跨语种标点污染。\n"
+          + "  - 半角隔离：English, French, Spanish, German, Portuguese, Russian, Italian 使用纯半角标点（如 , . ! ? ()），不要混入中文全角标点。\n"
           + "  - 专属引号：French/Russian 必须用角引号 « »；German 用 „ “；Japanese/Traditional Chinese 用 「 」 或 『 』；其余西欧语言用双引号 \"\"。\n"
           + "  - 特殊语种约束：French 必须在 ! ? : ; 与法式引号内侧加不换行空格；Spanish 必须在感叹/疑问句首加 ¿ 和 ¡；Korean 必须使用半角标点加后置空格。\n"
-          + "【标点白名单与防误判】：注意！俄语、法语等语言的母语规范就是使用角引号 « »！严禁将正确的角引号 « » 误判为中文符号或排版污染，绝对禁止将其修改为英文直引号 \" \"！只有当目标译文中残留中文全角标点（如 ， 。 ？ ！ “ ” 《 》）时，才属于需要清理的排版污染。\n"
-          + "【屈折语语法豁免】：注意！对于俄语、德语、法语等具有变格、变位、阴阳性变化的屈折语，【术语表】提供的仅为词根/主格参考。必须绝对服从目标语言的语法规范！允许术语在上下文中产生合理的后缀变化（例如俄语的属格/第二格形式）。严禁为了死板匹配术语表的静态字符串，而破坏目标语言的语法连贯性或将其生硬地改回词根原型！\n"
-          + "【防误判声明】：严禁因为译文将中文全角标点正确转换为了目标语言的标点，而将其误判为格式错误、与原文不符或需要回退！只要代码标签、占位符和换行数量位置对齐，目标语言按母语排版规范完成本地化属于正确行为。\n"
-          + "【修改触发条件】（满足其一才修改）：\n"
+          + "【标点白名单】：俄语、法语等语言的母语规范就是使用角引号 « »；正确的角引号不是中文符号或排版污染。只有目标译文中残留中文全角标点（如 ， 。 ？ ！ “ ” 《 》）时，才属于需要清理的排版污染。\n"
+          + "【屈折语语法】：对于俄语、德语、法语等具有变格、变位、阴阳性变化的屈折语，【术语表】提供的仅为词根/主格参考；允许术语在上下文中产生合理的后缀变化。\n"
+          + "【修改触发条件】：\n"
           + "  1. 格式/代码丢失：漏掉富文本标签（<color>）、占位符（{0}）或换行符（\\n），或与原文无法 100% 对齐。\n"
           + "  2. 致命错误：语义相反、错翻、漏翻、违背背景设定或违背 System 中的强制术语表。\n"
           + "  3. 名词不一致：与【前置剧情】中已稳定出现的物品名、角色名、称谓或关键术语译法不一致。\n"
@@ -3417,17 +3466,16 @@
           + "待校对数据：\n"
           + JSON.stringify(proofreadPayload)
         : "你是极其专业且极其克制的游戏 LQA 质检专家。请对比 'baseText' 和 'currentTranslations'，并严格遵守 System 设定的背景与语气。\n"
-          + "【最高禁令】：如果没有客观的致命错误（如漏翻、错翻、违背术语表、代码标签丢失、占位符或换行丢失、严重排版污染、明确违背背景设定），绝对禁止仅仅为了修改语序、同义词替换或觉得“不够地道”而触发修改！宁可不改，绝不瞎改！对于质量及格的翻译，绝对不要包含在返回的 JSON 中！\n"
-          + "【绝对基准】：必须且只能以 'baseText' 为唯一基准进行 1对1 校验，禁止外语之间互相干涉！\n"
-          + "【代码与格式绝对保留】：富文本标签（如 <color>）、占位符（如 {0}）与换行符（\\n）必须与原文 100% 对齐。禁止丢失、禁止随意增减、禁止改写顺序。\n"
-          + "【排版本地化强制规范】：必须严格遵循目标语言母语排版，严禁跨语种标点污染！\n"
-          + "  - 半角隔离：English, French, Spanish, German, Portuguese, Russian, Italian 必须使用纯半角标点（如 , . ! ? ()），绝对禁止混入中文全角标点！\n"
+          + "【工作目标】：只处理客观可证明的 LQA 问题，例如漏翻、错翻、术语冲突、代码格式丢失、严重排版污染或明确违背背景设定。质量合格的译文不要返回 finding。\n"
+          + "【校对基准】：以 'baseText' 为唯一基准进行 1对1 校验，不要让其他目标语言互相干涉。\n"
+          + "【硬格式约束】：富文本标签（如 <color>）、占位符（如 {0}）与换行符（\\n）必须与原文 100% 对齐。\n"
+          + "【排版本地化规范】：必须遵循目标语言母语排版，避免跨语种标点污染。\n"
+          + "  - 半角隔离：English, French, Spanish, German, Portuguese, Russian, Italian 使用纯半角标点（如 , . ! ? ()），不要混入中文全角标点。\n"
           + "  - 专属引号：French/Russian 必须用角引号 « »；German 用 „ “；Japanese/Traditional Chinese 用 「 」 或 『 』；其余西欧语言用双引号 \"\"。\n"
           + "  - 特殊语种约束：French 必须在 ! ? : ; 与法式引号内侧加不换行空格；Spanish 必须在感叹/疑问句首加 ¿ 和 ¡；Korean 必须使用半角标点加后置空格。\n"
-          + "【标点白名单与防误判】：注意！俄语、法语等语言的母语规范就是使用角引号 « »！严禁将正确的角引号 « » 误判为中文符号或排版污染，绝对禁止将其修改为英文直引号 \" \"！只有当目标译文中残留中文全角标点（如 ， 。 ？ ！ “ ” 《 》）时，才属于需要清理的排版污染。\n"
-          + "【屈折语语法豁免】：注意！对于俄语、德语、法语等具有变格、变位、阴阳性变化的屈折语，【术语表】提供的仅为词根/主格参考。必须绝对服从目标语言的语法规范！允许术语在上下文中产生合理的后缀变化（例如俄语的属格/第二格形式）。严禁为了死板匹配术语表的静态字符串，而破坏目标语言的语法连贯性或将其生硬地改回词根原型！\n"
-          + "【防误判声明】：严禁因为译文将中文全角标点正确转换为了目标语言的标点，而将其误判为格式错误、与原文不符或需要回退！只要代码标签、占位符和换行数量位置对齐，目标语言按母语排版规范完成本地化属于正确行为。\n"
-          + "【修改触发条件】（只有满足以下任意一条才允许返回修改建议）：\n"
+          + "【标点白名单】：俄语、法语等语言的母语规范就是使用角引号 « »；正确的角引号不是中文符号或排版污染。只有目标译文中残留中文全角标点（如 ， 。 ？ ！ “ ” 《 》）时，才属于需要清理的排版污染。\n"
+          + "【屈折语语法】：对于俄语、德语、法语等具有变格、变位、阴阳性变化的屈折语，【术语表】提供的仅为词根/主格参考；允许术语在上下文中产生合理的后缀变化。\n"
+          + "【修改触发条件】：\n"
           + "  1. 格式/代码丢失：译文漏掉了富文本标签（如 <color>）、占位符（如 {0}）或换行符（\\n），或与原文无法 100% 对齐。\n"
           + "  2. 致命错误：存在语义相反、名词/术语错误、漏翻、或完全违背背景设定的情况。\n"
           + "  3. 排版污染：目标语言为西欧语言时，错误残留了中文全角标点（如全角括号、引号），或违背了目标语言专属排版。\n"
