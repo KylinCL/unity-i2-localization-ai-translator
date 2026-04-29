@@ -922,6 +922,123 @@
       background: rgba(255, 165, 0, 0.1);
       color: #ffe2b8;
     }
+    .log-entry.lqa-card {
+      display: grid;
+      gap: 8px;
+      padding: 12px 13px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.035);
+      color: #eadcc8;
+    }
+    .log-entry.lqa-card .log-time {
+      display: block;
+      margin: 0;
+      font-size: 0.78rem;
+    }
+    .log-entry.lqa-card.lqa-severity-critical {
+      border-color: rgba(255, 107, 107, 0.42);
+      background: linear-gradient(180deg, rgba(255, 107, 107, 0.13), rgba(255, 107, 107, 0.055));
+    }
+    .log-entry.lqa-card.lqa-severity-major {
+      border-color: rgba(255, 184, 77, 0.42);
+      background: linear-gradient(180deg, rgba(255, 184, 77, 0.14), rgba(255, 184, 77, 0.06));
+    }
+    .log-entry.lqa-card.lqa-severity-minor,
+    .log-entry.lqa-card.lqa-severity-suggestion {
+      border-color: rgba(79, 195, 247, 0.34);
+      background: linear-gradient(180deg, rgba(79, 195, 247, 0.105), rgba(79, 195, 247, 0.045));
+    }
+    .log-entry.lqa-card.lqa-severity-default {
+      border-color: rgba(183, 197, 216, 0.28);
+      background: rgba(183, 197, 216, 0.06);
+    }
+    .lqa-card-content {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+    .lqa-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .lqa-card-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+    .lqa-action-label {
+      color: #f6dfbd;
+      font-weight: 800;
+    }
+    .lqa-badge {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 4px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      font-size: 0.74rem;
+      font-weight: 900;
+      line-height: 1.25;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .lqa-severity-critical .lqa-badge {
+      color: #ffe2df;
+      border-color: rgba(255, 107, 107, 0.58);
+      background: rgba(255, 107, 107, 0.2);
+    }
+    .lqa-severity-major .lqa-badge {
+      color: #fff0cc;
+      border-color: rgba(255, 184, 77, 0.6);
+      background: rgba(255, 184, 77, 0.2);
+    }
+    .lqa-severity-minor .lqa-badge,
+    .lqa-severity-suggestion .lqa-badge {
+      color: #d8f2ff;
+      border-color: rgba(79, 195, 247, 0.46);
+      background: rgba(79, 195, 247, 0.14);
+    }
+    .lqa-severity-default .lqa-badge {
+      color: #e1e8f2;
+      border-color: rgba(183, 197, 216, 0.32);
+      background: rgba(183, 197, 216, 0.1);
+    }
+    .lqa-card-details {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+    .lqa-detail-row {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      min-width: 0;
+    }
+    .lqa-detail-label {
+      width: 86px;
+      color: #aebbd0;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .lqa-detail-value {
+      min-width: 0;
+      color: #eadcc8;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .lqa-detail-row.reason .lqa-detail-value {
+      color: #fff0c7;
+      font-weight: 750;
+    }
     .log-entry.log-summary-divider {
       color: #4caf50 !important;
       font-weight: 900 !important;
@@ -1795,13 +1912,118 @@
       return rows;
     }
 
-    function buildLqaLogHtml(row, lang, note, actionLabel = "LQA 修正") {
+    function parseLegacyLqaNote(note) {
+      const text = String(note ?? "").trim();
+      const result = {};
+      const headerMatch = text.match(/^\[([^/\]]+)\s*\/\s*([^\]]+)\]\s*([\s\S]*)$/);
+      const body = headerMatch ? headerMatch[3] : text;
+
+      if (headerMatch) {
+        result.severityLabel = headerMatch[1].trim();
+        result.issueLabel = headerMatch[2].trim();
+      }
+
+      const evidenceMatch = body.match(/(?:^|；)证据：([\s\S]*?)(?=；(?:判定|说明)：|$)/);
+      const decisionMatch = body.match(/(?:^|；)判定：([\s\S]*?)(?=；说明：|$)/);
+      const reasonMatch = body.match(/(?:^|；)说明：([\s\S]*)$/);
+
+      if (evidenceMatch) {
+        result.evidence = evidenceMatch[1].trim();
+      }
+      if (decisionMatch) {
+        result.decision = decisionMatch[1].trim();
+      }
+      if (reasonMatch) {
+        result.reason = reasonMatch[1].trim();
+      }
+
+      return result;
+    }
+
+    function normalizeLqaLogDetail(detailOrNote, fallback = {}) {
+      const detail = detailOrNote && typeof detailOrNote === "object" && !Array.isArray(detailOrNote)
+        ? detailOrNote
+        : {};
+      const fallbackNote = String(fallback?.note ?? "").trim();
+      const rawNote = typeof detailOrNote === "string" ? detailOrNote : (detail.note ?? fallbackNote);
+      const parsed = parseLegacyLqaNote(rawNote);
+      const source = String(detail.source ?? fallback?.source ?? "");
+      const severity = String(detail.severity || fallback?.severity || (source === "local_format_scan" ? "critical" : "")).toLowerCase();
+      const issueType = String(detail.issueType || fallback?.issueType || "");
+      const severityLabel = String(
+        detail.severityLabel
+        || parsed.severityLabel
+        || LQA_SEVERITY_LABELS[severity]
+        || (severity ? severity : "未分级")
+      );
+      const issueLabel = String(
+        detail.issueLabel
+        || parsed.issueLabel
+        || LQA_ISSUE_TYPE_LABELS[issueType]
+        || (issueType ? issueType : "LQA")
+      );
+      const reasonFallback = parsed.reason || rawNote || fallbackNote || "未提供说明";
+
+      return {
+        severity,
+        issueType,
+        severityLabel,
+        issueLabel,
+        evidence: String(detail.evidence || parsed.evidence || "未提供结构化证据").trim(),
+        decision: String(detail.decision || parsed.decision || "按 LQA 规则处理").trim(),
+        reason: String(detail.reason || reasonFallback).trim(),
+        note: String(rawNote || reasonFallback).trim(),
+        source
+      };
+    }
+
+    function getLqaSeverityClass(detailOrNote, source = "") {
+      const detail = normalizeLqaLogDetail(detailOrNote, { source });
+      if (["critical", "major", "minor", "suggestion"].includes(detail.severity)) {
+        return "lqa-severity-" + detail.severity;
+      }
+
+      if (detail.severityLabel === "严重") {
+        return "lqa-severity-critical";
+      }
+      if (detail.severityLabel === "重要") {
+        return "lqa-severity-major";
+      }
+
+      return "lqa-severity-default";
+    }
+
+    function buildLqaLogClassName(detailOrNote, source = "") {
+      return "lqa lqa-card " + getLqaSeverityClass(detailOrNote, source);
+    }
+
+    function buildLqaDetailRow(label, value, className = "") {
+      return "<div class=\"lqa-detail-row" + (className ? " " + escapeHtml(className) : "") + "\">"
+        + "<span class=\"lqa-detail-label\">" + escapeHtml(label) + "</span>"
+        + "<span class=\"lqa-detail-value\">" + escapeHtml(value) + "</span>"
+        + "</div>";
+    }
+
+    function buildLqaLogHtml(row, lang, detailOrNote, actionLabel = "LQA 修正") {
+      const detail = normalizeLqaLogDetail(detailOrNote);
       const rowId = "table-row-" + row;
       const safeLang = String(lang ?? "");
-      return "<span style=\"color: #FFA500;\">🛠️ </span>"
-        + "<a href=\"#" + escapeHtml(rowId) + "\" class=\"table-row-link\" data-target-row=\"" + escapeHtml(rowId) + "\" data-row=\"" + row + "\" data-lang=\"" + escapeHtml(safeLang) + "\">行 [" + (row + 1) + "]</a> "
-        + "<span class=\"lqa-lang\">[" + escapeHtml(lang) + "]</span> "
-        + escapeHtml(actionLabel) + "：" + escapeHtml(note);
+      return "<div class=\"lqa-card-content\">"
+        + "<div class=\"lqa-card-header\">"
+        + "<div class=\"lqa-card-title\">"
+        + "<span aria-hidden=\"true\">🛠️</span>"
+        + "<a href=\"#" + escapeHtml(rowId) + "\" class=\"table-row-link\" data-target-row=\"" + escapeHtml(rowId) + "\" data-row=\"" + row + "\" data-lang=\"" + escapeHtml(safeLang) + "\">行 [" + (row + 1) + "]</a>"
+        + "<span class=\"lqa-lang\">[" + escapeHtml(lang) + "]</span>"
+        + "<span class=\"lqa-action-label\">" + escapeHtml(actionLabel) + "</span>"
+        + "</div>"
+        + "<span class=\"lqa-badge\">" + escapeHtml(detail.severityLabel + " / " + detail.issueLabel) + "</span>"
+        + "</div>"
+        + "<div class=\"lqa-card-details\">"
+        + buildLqaDetailRow("🔍 证据：", detail.evidence)
+        + buildLqaDetailRow("🧭 判定：", detail.decision)
+        + buildLqaDetailRow("📝 说明：", detail.reason, "reason")
+        + "</div>"
+        + "</div>";
     }
 
     function setPendingLqaState(value) {
@@ -3102,11 +3324,18 @@
         }
 
         if (!resultMap[row]) {
-          resultMap[row] = { _notes: {} };
+          resultMap[row] = { _notes: {}, _details: {} };
         }
+        resultMap[row]._details = resultMap[row]._details || {};
 
+        const lqaDetail = normalizeLqaLogDetail({
+          ...finding,
+          note: formatLqaFindingReason(finding),
+          source: "model"
+        });
         resultMap[row][lang] = normalizedNewText;
-        resultMap[row]._notes[lang] = formatLqaFindingReason(finding);
+        resultMap[row]._notes[lang] = lqaDetail.note;
+        resultMap[row]._details[lang] = lqaDetail;
       });
 
       if (ignoredFindingCount > 0) {
@@ -3234,10 +3463,14 @@
               const note = typeof rowResult._notes?.[lang] === "string"
                 ? rowResult._notes[lang].trim()
                 : (typeof rowResult._note === "string" ? rowResult._note.trim() : "");
+              const detail = rowResult._details?.[lang]
+                ? normalizeLqaLogDetail(rowResult._details[lang], { note, source: "model" })
+                : normalizeLqaLogDetail(note, { note, source: "model" });
               rowData._lqaHistory[lang] = {
                 originalText: oldText,
                 aiText: proofreadText,
                 note,
+                lqaDetail: detail,
                 baseLanguage: selectedBaseLanguage,
                 baseText: item.baseText ?? "",
                 descColumnName: findDescColumnName(csvHeaders),
@@ -3250,7 +3483,7 @@
               rowChanged = true;
               createdPendingHistory = true;
               cellsUpdated += 1;
-              notes.push({ row: item.row, lang, note, source: "model" });
+              notes.push({ row: item.row, lang, note, source: "model", detail });
             }
           });
         }
@@ -3271,10 +3504,22 @@
           }
 
           const note = buildLocalFormatIssueNote(remainingIssues);
+          const detail = normalizeLqaLogDetail({
+            severity: "critical",
+            issueType: "format_hard_error",
+            severityLabel: "严重",
+            issueLabel: "格式硬错误",
+            evidence: remainingIssues.join("；"),
+            decision: "模型未返回通过硬校验的修复，保留原译文等待人工确认。",
+            reason: "本地格式预扫描确认该单元格仍存在格式不一致。",
+            note,
+            source: "local_format_scan"
+          });
           rowData._lqaHistory[lang] = {
             originalText: currentText,
             aiText: currentText,
             note,
+            lqaDetail: detail,
             baseLanguage: selectedBaseLanguage,
             baseText: item.baseText ?? "",
             descColumnName: findDescColumnName(csvHeaders),
@@ -3285,7 +3530,7 @@
           rowChanged = true;
           createdPendingHistory = true;
           cellsUpdated += 1;
-          notes.push({ row: item.row, lang, note, source: "local_format_scan" });
+          notes.push({ row: item.row, lang, note, source: "local_format_scan", detail });
         });
 
         if (rowChanged) {
@@ -4613,11 +4858,12 @@
           batchRunner: runProofreadBatch,
           applyResult: applyBatchProofreading,
           handleNotes(applyPayload) {
-            applyPayload.notes.forEach(({ row, lang, note, source }) => {
+            applyPayload.notes.forEach(({ row, lang, note, source, detail }) => {
               const actionLabel = source === "local_format_scan" ? "LQA 提醒" : "LQA 修正";
-              addLog(buildLqaLogHtml(row, lang, note || "已根据 LQA 规则完成修正。", actionLabel), "info", {
+              const logDetail = detail || normalizeLqaLogDetail(note || "已根据 LQA 规则完成修正。", { note, source });
+              addLog(buildLqaLogHtml(row, lang, logDetail, actionLabel), "info", {
                 html: true,
-                className: "lqa",
+                className: buildLqaLogClassName(logDetail, source),
                 id: buildLogElementId(row, lang)
               });
             });
@@ -4712,11 +4958,12 @@
         batchRunner: runProofreadBatch,
         applyResult: applyBatchProofreading,
         handleNotes(applyPayload) {
-          applyPayload.notes.forEach(({ row, lang, note, source }) => {
+          applyPayload.notes.forEach(({ row, lang, note, source, detail }) => {
             const actionLabel = source === "local_format_scan" ? "LQA 提醒" : "LQA 修正";
-            addLog(buildLqaLogHtml(row, lang, note || "已根据 LQA 规则完成修正。", actionLabel), "info", {
+            const logDetail = detail || normalizeLqaLogDetail(note || "已根据 LQA 规则完成修正。", { note, source });
+            addLog(buildLqaLogHtml(row, lang, logDetail, actionLabel), "info", {
               html: true,
-              className: "lqa",
+              className: buildLqaLogClassName(logDetail, source),
               id: buildLogElementId(row, lang)
             });
           });
