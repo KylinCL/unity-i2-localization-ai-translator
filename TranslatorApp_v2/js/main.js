@@ -559,10 +559,8 @@ function handleCsvFile(file) {
       }
     },
     error(error) {
-      patchState({
-        csvHeaders: [],
-        csvData: []
-      });
+      patchState({ csvHeaders: [] });
+      setCsvData([]);
       renderLanguageConfig(state.csvHeaders, languageConfigCallbacks);
       renderEmptyTableState("CSV 解析失败", "请检查文件格式或编码后重试。");
       updateStats(state.csvHeaders, state.csvData);
